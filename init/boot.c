@@ -1,12 +1,9 @@
-#include <Uefi.h>
-#include <Library/UefiLib.h>
 #include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
-#include <Library/BaseMemoryLib.h>
-
-#include <Protocol/SimpleFileSystem.h>
-#include <Protocol/LoadedImage.h>
+#include <Library/UefiLib.h>
+#include <Uefi.h>
 
 #include "init/boot.h"
 #include "lib/setup.h"
@@ -17,12 +14,13 @@ void EFIAPI init_services(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 	gBS = SystemTable->BootServices;
 }
 
-EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
+			   IN EFI_SYSTEM_TABLE *SystemTable)
 {
 	EFI_STATUS status;
 	EFI_FILE_PROTOCOL *vmm_bin;
 	struct vmm_context *context;
-	UINTN vmm_binary_size;
+	// UINTN vmm_binary_size;
 	UINTN map_key;
 
 	init_services(ImageHandle, SystemTable);
@@ -34,20 +32,25 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syste
 
 	vmm_bin = context->open_vmm(ImageHandle);
 	context->read_vmm(context, vmm_bin);
-	vmm_binary_size = context->vmm_size(vmm_bin); // save vmm size for identity mapping
+	//vmm_binary_size = context->vmm_size(
+	//	vmm_bin); // save vmm size for identity mapping
 
-	context->start(context, vmm_binary_size);
+	context->start(context, 1536 * 4096); /* only vmm 6mb, actaully 8mb */
 
 	vmm_bin->Close(vmm_bin);
 
-	gBS->AllocatePool(EfiRuntimeServicesData, sizeof(EFI_MEMORY_DESCRIPTOR) * 8, (void **)&context->memory_desc);
+	gBS->AllocatePool(EfiRuntimeServicesData,
+			  sizeof(EFI_MEMORY_DESCRIPTOR) * 8,
+			  (void **)&context->memory_desc);
 
-	do
-	{
-		status = gBS->GetMemoryMap(&context->map_size, context->memory_desc, &map_key, &context->desc_size, NULL);
-		gBS->AllocatePool(EfiRuntimeServicesData, context->map_size, (void **)&context->memory_desc);
-		if (EFI_ERROR(status))
-		{
+	do {
+		status = gBS->GetMemoryMap(&context->map_size,
+					   context->memory_desc, &map_key,
+					   &context->desc_size, NULL);
+		gBS->FreePool((void *)context->memory_desc);
+		gBS->AllocatePool(EfiRuntimeServicesData, context->map_size,
+				  (void **)&context->memory_desc);
+		if (EFI_ERROR(status)) {
 			Print(L"failed get memory map = %r\r\n", status);
 			context->map_size += context->desc_size * 8;
 		}

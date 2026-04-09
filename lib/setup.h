@@ -23,20 +23,29 @@
 
 #define offset_of(type, member) ((size_t)&(((type *)0)->member))
 
-#define container_of(ptr, type, member) ({                                            \
-	void *__mptr = (void *)ptr(type *)((char *)__mptr - offset_of(type, member)); \
-})
+#define container_of(ptr, type, member)                                        \
+	({                                                                     \
+		void *__mptr = (void *)ptr(type *)((char *)__mptr -            \
+						   offset_of(type, member));   \
+	})
 
 struct vmm_context *create_vmm_context();
 
 void EFIAPI init_vmm_context(struct vmm_context *context);
-void EFIAPI start_settings(struct vmm_context *context, UINTN vmm_binary_size);
-UINT64 EFIAPI set_page_table(struct vmm_context *context, UINT64 free_page);
-UINT64 EFIAPI set_gdt_idt_register(struct vmm_context *context, UINT64 free_page);
+void EFIAPI start_setup(struct vmm_context *context, UINTN vmm_binary_size);
+
+UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page);
+UINT64 EFIAPI setup_idt(struct vmm_context *context, UINT64 free_page);
+
+UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page);
+static inline void EFIAPI __left_2mb_mapping(struct vmm_context *context,
+					 UINT64 free_page);
+
 UINT64 EFIAPI start_ap_wake_up(struct vmm_context *context, UINT64 free_page);
 
 EFI_FILE_PROTOCOL *open_vmm_binary(EFI_HANDLE image_handle);
 UINTN EFIAPI get_vmm_size(EFI_FILE_PROTOCOL *vmm_img);
-EFI_STATUS EFIAPI read_vmm_binary(struct vmm_context *context, EFI_FILE_PROTOCOL *vmm_img);
+EFI_STATUS EFIAPI read_vmm_binary(struct vmm_context *context,
+				  EFI_FILE_PROTOCOL *vmm_img);
 
 #endif
