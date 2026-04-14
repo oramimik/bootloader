@@ -4,6 +4,9 @@
 #define PAGE_SIZE 4096
 #define PAGE_MASK (~(PAGE_SIZE - 1))
 
+#define PRESENT_MASK 0x1
+#define READ_WRITE_MASK 0x2
+
 #define BASIC_FLAGS_MASK 0x3
 #define PDE_FALGS_MASK 0x83
 
@@ -35,11 +38,14 @@ void EFIAPI init_vmm_context(struct vmm_context *context);
 void EFIAPI start_setup(struct vmm_context *context, UINTN vmm_binary_size);
 
 UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page);
+void EFIAPI setup_tss_x86_x64(struct vmm_context *context);
+static void EFIAPI setup_tss_2_gdt(struct vmm_context *context);
+
 UINT64 EFIAPI setup_idt(struct vmm_context *context, UINT64 free_page);
 
 UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page);
-static inline void EFIAPI __left_2mb_mapping(struct vmm_context *context,
-					 UINT64 free_page);
+static void EFIAPI __left_2mb_mapping(struct vmm_context *context,
+					     UINT64 free_page);
 
 UINT64 EFIAPI start_ap_wake_up(struct vmm_context *context, UINT64 free_page);
 
