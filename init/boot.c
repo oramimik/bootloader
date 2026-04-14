@@ -1,9 +1,9 @@
+#include <Uefi.h>
+#include <Library/UefiLib.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
-#include <Library/UefiLib.h>
-#include <Uefi.h>
 
 #include "init/boot.h"
 #include "lib/setup.h"
