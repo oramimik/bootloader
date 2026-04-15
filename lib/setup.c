@@ -5,6 +5,7 @@
 #include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
+
 #include <Protocol/LoadedImage.h>
 #include <Protocol/MpService.h>
 #include <Protocol/SimpleFileSystem.h>
@@ -42,6 +43,7 @@ struct vmm_context *create_vmm_context()
 void EFIAPI init_vmm_context(struct vmm_context *context)
 {
 	EFI_STATUS status;
+	UINT64 enter_vmm_address;
 
 	status = gBS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesCode,
 				    2048, &context->vmm);
@@ -53,6 +55,16 @@ void EFIAPI init_vmm_context(struct vmm_context *context)
 	Print(L"vmm address = %lx\r\n", (UINT64 *)context->vmm);
 
 	context->max_vmm_size = 2048 * PAGE_SIZE;
+
+	context->bridge_address = 0x400000;
+	status = gBS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesCode,
+				    1, &context->bridge_address);
+	if(EFI_ERROR(status)) {
+		Print(L"failed allocate for identity mapping = %r\r\n", status);
+	}
+	enter_vmm_address = (UINT64)enter_vmm;
+	CopyMem((void*)context->bridge_address, (void*)enter_vmm_address, 4095);
+
 	context->ap_entry_page = 0xFFFFF;
 	status = gBS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData,
 				    1, &context->ap_entry_page);
@@ -140,7 +152,7 @@ UINTN EFIAPI get_vmm_size(EFI_FILE_PROTOCOL *vmm_img)
 
 void EFIAPI start_setup(struct vmm_context *context, UINTN vmm_binary_size)
 {
-	UINT64 free_page;
+	UINT64 free_page, mapping_2mb;
 
 	free_page = ((context->vmm + vmm_binary_size) & PAGE_MASK) + PAGE_SIZE;
 
@@ -149,19 +161,19 @@ void EFIAPI start_setup(struct vmm_context *context, UINTN vmm_binary_size)
 	Print(L"free page address = 0x%lx\r\n", free_page);
 	context->vmm_stack = (EFI_PHYSICAL_ADDRESS)free_page;
 	context->vmm_stack_size = 32 * PAGE_SIZE;
+	mapping_2mb = free_page;
 	free_page += context->vmm_stack_size;
 	Print(L"free page address = 0x%lx\r\n", free_page);
 
 	Print(L"\r\n\r\n\r\n");
 
-	// I should to be identity mapping vmm start + 6MB with gdt, idt
-	// and page table
-
 	context->set_tss(context);
 	free_page = context->set_gdt(context, free_page);
-	// free_page = context->set_idt(context, free_page);
 
-	// free_page = context->set_page_table(context, free_page);
+	/* in enter vmm, i have set cli. */
+	//free_page = context->set_idt(context, free_page);
+
+	free_page = context->set_page_table(context, free_page, mapping_2mb);
 
 	free_page = context->start_aps(context, free_page);
 
@@ -186,7 +198,7 @@ UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page)
 	context->gdt[9] = X64_USER_CODE_SEGMENT;
 	context->gdt[10] = X64_USER_DATA_SEGMENT;
 	setup_tss_2_gdt(context);
-	
+
 	for (UINT64 i = 0; i < 13; ++i) {
 		Print(L"GDT[%llu] = 0x%lx, addr = 0x%lx\r\n", i,
 		      context->gdt[i], &context->gdt[i]);
@@ -236,7 +248,7 @@ static void EFIAPI setup_tss_2_gdt(struct vmm_context *context)
 	context->gdt[5] |= (UINT64)(tss_addr & 0xff000000) << 32;
 
 	tss_addr = (UINT64)&context->tss64;
-		Print(L"tss address = 0x%lx\r\n", tss_addr);
+	Print(L"tss address = 0x%lx\r\n", tss_addr);
 	context->gdt[11] = (sizeof(struct task_state_segment64) - 1) & 0xffff;
 	context->gdt[11] |= (UINT64)(tss_addr & 0xffffff) << 16;
 	context->gdt[11] |= (0x89ULL << 40);
@@ -246,12 +258,13 @@ static void EFIAPI setup_tss_2_gdt(struct vmm_context *context)
 
 UINT64 EFIAPI setup_idt(struct vmm_context *context, UINT64 free_page)
 {
-	
+	free_page += PAGE_SIZE;
 
 	return free_page;
 }
 
-UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page)
+UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page,
+			       UINT64 mapping_2mb_addr)
 {
 	context->pml4 = (UINT64 *)free_page;
 	free_page += PAGE_SIZE;
@@ -283,21 +296,21 @@ UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page)
 	}
 	Print(L"\r\n");
 
-	__left_2mb_mapping(context, free_page);
+	__left_2mb_mapping(context, mapping_2mb_addr);
 
 	free_page += PAGE_SIZE;
 	return free_page;
 }
 
 static void EFIAPI __left_2mb_mapping(struct vmm_context *context,
-					     UINT64 free_page)
+				      UINT64 mapping_2mb_addr)
 {
 	context->pde[3] |= PRESENT_MASK;
 	context->pde[3] |= READ_WRITE_MASK;
 	context->pde[3] |= (UINT64)context->pte;
 
 	for (UINT64 i = 0; i < 512; ++i) {
-		context->pte[i] = free_page + (4096 * i);
+		context->pte[i] = mapping_2mb_addr + (4096 * i);
 		context->pte[i] |= PRESENT_MASK;
 		context->pte[i] |= READ_WRITE_MASK;
 	}
@@ -309,6 +322,8 @@ static void EFIAPI __left_2mb_mapping(struct vmm_context *context,
 		Print(L"PDE[%llu] = 0x%lx\r\n", i, context->pde[i]);
 		Print(L"PDE[%llu] = 0x%lx\r\n", i, context->pde[i]);
 	}
+	Print(L"\r\n\r\n");
+
 	Print(L"\r\n");
 }
 

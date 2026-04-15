@@ -94,6 +94,8 @@ struct processor_struct {
 struct vmm_context {
 	EFI_PHYSICAL_ADDRESS vmm;
 	EFI_PHYSICAL_ADDRESS vmm_stack;
+	EFI_PHYSICAL_ADDRESS bridge_address;
+	EFI_PHYSICAL_ADDRESS ap_entry_page;
 	UINT64 vmm_stack_size;
 
 	UINT64 *gdt;
@@ -109,8 +111,6 @@ struct vmm_context {
 	UINT64 *pte;
 
 	UINTN rflags;
-
-	EFI_PHYSICAL_ADDRESS ap_entry_page;
 
 	EFI_MEMORY_DESCRIPTOR *memory_desc;
 	UINTN map_size;
@@ -132,7 +132,7 @@ struct vmm_context {
 	void(EFIAPI *set_tss)(struct vmm_context *context);
 	
 	UINT64(EFIAPI *set_page_table)(struct vmm_context *context,
-				   UINT64 free_page);
+				   UINT64 free_page, UINT64 mapping_2mb_addr);
 
 	UINT64(EFIAPI *start_aps)(struct vmm_context *context,
 				  UINT64 free_page);
@@ -144,10 +144,15 @@ struct vmm_context {
 };
 #pragma pack(pop)
 
+UINT64 EFIAPI get_gdtr_offset();
+UINT64 EFIAPI get_pg_table_offset();
+
 void EFIAPI init_services(EFI_HANDLE image_handle,
 			  EFI_SYSTEM_TABLE *system_table);
 
 EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 			   IN EFI_SYSTEM_TABLE *SystemTable);
+
+extern void enter_vmm(struct vmm_context *context);
 
 #endif

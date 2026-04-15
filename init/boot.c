@@ -8,6 +8,16 @@
 #include "init/boot.h"
 #include "lib/setup.h"
 
+UINT64 EFIAPI get_gdtr_offset()
+{
+	return offset_of(struct vmm_context, gdtr);
+}
+
+UINT64 EFIAPI get_pg_table_offset()
+{
+	return offset_of(struct vmm_context, pml4);
+}
+
 void EFIAPI init_services(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
 	gST = SystemTable;
@@ -35,7 +45,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 	//vmm_binary_size = context->vmm_size(
 	//	vmm_bin); // save vmm size for identity mapping
 
-	context->start(context, 1536 * 4096); /* only vmm 6mb, actaully 8mb */
+	context->start(context, 1536 * 4096); /* only vmm 6mb, total = 8mb */
 
 	vmm_bin->Close(vmm_bin);
 
@@ -58,7 +68,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 
 	gBS->ExitBootServices(ImageHandle, map_key);
 
-	// enter vmm
+	enter_vmm(context);
 
 	return status;
 }

@@ -1,64 +1,61 @@
 bits 64
+align 16
 
 default rel
 
 section .data
-        .vmm_entry dq 0
+        vmm_entry dq 0
+	gdt_entry dq 0
+	pg_table_entry dq 0
 
+	bridge_address dq 0
 
 section .text
 
-%macro isr_err_stub 1
-isr_stub_%+%1:
-	call exception_handler
-	iret
-%endmacro
-
-%macro isr_no_err_stub 1
-isr_stub_%+%1:
-	call exception_handler
-	iret
-%endmacro
-
-
-isr_no_err_stub 0
-isr_no_err_stub 1
-isr_no_err_stub 2
-isr_no_err_stub 3
-isr_no_err_stub 4
-isr_no_err_stub 5
-isr_no_err_stub 6
-isr_no_err_stub 7
-isr_err_stub    8
-isr_no_err_stub 9
-isr_err_stub    10
-isr_err_stub    11
-isr_err_stub    12
-isr_err_stub    13
-isr_err_stub    14
-isr_no_err_stub 15
-isr_no_err_stub 16
-isr_err_stub    17
-isr_no_err_stub 18
-isr_no_err_stub 19
-isr_no_err_stub 20
-isr_no_err_stub 21
-isr_no_err_stub 22
-isr_no_err_stub 23
-isr_no_err_stub 24
-isr_no_err_stub 25
-isr_no_err_stub 26
-isr_no_err_stub 27
-isr_no_err_stub 28
-isr_no_err_stub 29
-isr_err_stub    30
-isr_no_err_stub 31
+extern get_gdtr_offset
+extern get_pg_table_offset
 
 global enter_vmm
 enter_vmm:
         cli
 
-global exception_handler:
-exception_handler:
-	cli
-	hlt
+	mov rax, [rcx]
+	mov [rel vmm_entry], rax
+
+	mov rax, [rcx + 0x10]
+	mov [rel bridge_address], rax
+
+	mov rbx, rcx
+	call get_gdtr_offset
+	mov rcx, rbx
+	mov rbx, [rcx + rax]
+	mov [gdt_entry], rbx
+
+	mov rbx, rcx
+	call get_pg_table_offset
+	mov rcx, rbx
+	mov rbx, [rcx + rax]
+	mov [rel pg_table_entry], rbx
+
+	mov r8, [rel vmm_entry]
+	mov r9, [rel gdt_entry]
+	mov r10, [rel pg_table_entry]
+	mov r11, [rel bridge_address]
+
+	xor rax, rax
+	xor rbx, rbx
+
+	lea rbx, enter_vmm
+	lea rax, .next_step
+	sub rax, rbx
+
+	mov rbx, [rel bridge_address]
+	add rax, rbx
+
+	jmp rax
+
+
+.next_step:
+	mov dx, 0x3F8
+	mov al, 'g'
+	out dx, al
