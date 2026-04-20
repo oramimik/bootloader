@@ -347,7 +347,7 @@ static void EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
 		pte1[i] |= PRESENT_MASK;
 		pte1[i] |= READ_WRITE_MASK;
 	}
-	current += 0x00200000;
+	current += 0x00400000;
 	for (UINT64 i = 0; i < 512; ++i) {
 		pte2[i] = (current + (4096 * i)) & PHY_ADDRESS_MASK;
 		pte2[i] |= PRESENT_MASK;
