@@ -282,7 +282,7 @@ UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page,
 	free_page += PAGE_4KB;
 
 	ZeroMem((void*)pdpte, sizeof(UINT64*));
-	ZeroMem((void*)pde, sizeof(UINT64*) * 10);
+	ZeroMem((void*)pde, sizeof(UINT64*) * 12);
 
 	context->pml4[0] |= (UINT64)pdpte | PRESENT_MASK | READ_WRITE_MASK;
 	pdpte[0] |= (UINT64)pde | PRESENT_MASK | READ_WRITE_MASK;
@@ -312,25 +312,21 @@ static void EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
 
 	pte0 = (UINT64*)*free_page;
 	*free_page += PAGE_4KB;
-
 	pte1 = (UINT64*)*free_page;
 	*free_page += PAGE_4KB;
-
 	pte2 = (UINT64*)*free_page;
 	*free_page += PAGE_4KB;
 
-	ZeroMem((void*)pte0, sizeof(UINT64) * 512);
-	ZeroMem((void*)pte1, sizeof(UINT64) * 512);
-	ZeroMem((void*)pte2, sizeof(UINT64) * 512);
+	ZeroMem((void*)pte0, sizeof(UINT64*) * 512);
+	ZeroMem((void*)pte1, sizeof(UINT64*) * 512);
+	ZeroMem((void*)pte2, sizeof(UINT64*) * 512);
 
 	pde[10] |= PRESENT_MASK;
 	pde[10] |= READ_WRITE_MASK;
 	pde[10] |= (UINT64)pte0;
-
 	pde[11] |= PRESENT_MASK;
 	pde[11] |= READ_WRITE_MASK;
 	pde[11] |= (UINT64)pte1;
-
 	pde[12] |= PRESENT_MASK;
 	pde[12] |= READ_WRITE_MASK;
 	pde[12] |= (UINT64)pte2;
@@ -353,9 +349,6 @@ static void EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
 		pte2[i] |= PRESENT_MASK;
 		pte2[i] |= READ_WRITE_MASK;
 	}
-	__print_4kb(pte0, pte1, pte2);
-
-	Print(L"\r\n");
 }
 
 static void EFIAPI __print_2mb(struct vmm_context *context,
