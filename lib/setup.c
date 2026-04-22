@@ -14,6 +14,11 @@
 #include "init/boot.h"
 #include "setup.h"
 
+static void EFIAPI __set_control_registers(struct uefi_state_struct *state);
+static void EFIAPI __set_segment_registers(struct uefi_state_struct *state);
+static void EFIAPI __set_gdtr_idtr(struct uefi_state_struct *state);
+//static void EFIAPI __set_msr_etc(struct uefi_state_struct *state);
+
 struct vmm_context *create_vmm_context()
 {
 	struct vmm_context *context;
@@ -46,15 +51,15 @@ void EFIAPI init_vmm_context(struct vmm_context *context)
 	EFI_STATUS status;
 	UINT64 enter_vmm_address;
 
-	context->trampoline_address = 0x400000;
+	context->enter_vmm_addr = 0x01000000;
 	status = gBS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesCode,
-				    1, &context->trampoline_address);
+				    1, &context->enter_vmm_addr);
 	if (EFI_ERROR(status)) {
 		Print(L"failed allocate for identity mapping = %r\r\n", status);
 	}
 	enter_vmm_address = (UINT64)enter_vmm;
-	CopyMem((void *)context->trampoline_address, (void *)enter_vmm_address,
-		4095);
+	CopyMem((void *)context->enter_vmm_addr, (void *)enter_vmm_address,
+		PAGE_4KB);
 
 	context->ap_entry_page = 0xfffff;
 	status = gBS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData,
@@ -156,7 +161,7 @@ UINTN EFIAPI get_vmm_size(EFI_FILE_PROTOCOL *vmm_img)
 
 void EFIAPI start_setup(struct vmm_context *context)
 {
-	UINT64 free_page, mapping_2mb;
+	UINT64 free_page, mapping_2mb, VmmAddress;
 
 	free_page =
 		((context->vmm + context->vmm_bin_size) & PAGE_MASK) + PAGE_4KB;
@@ -181,6 +186,8 @@ void EFIAPI start_setup(struct vmm_context *context)
 	free_page = context->set_page_table(context, free_page, mapping_2mb);
 
 	free_page = context->start_aps(context, free_page);
+
+	VmmAddress = 0x01000000;
 }
 
 UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page)
@@ -202,7 +209,7 @@ UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page)
 	context->gdt[10] = X64_USER_DATA_SEGMENT;
 	setup_tss_2_gdt(context);
 
-	for (UINT64 i = 0; i < 13; ++i) {
+	for (UINT64 i = 0; i < 12; ++i) {
 		Print(L"GDT[%llu] = 0x%lx, addr = 0x%lx\r\n", i,
 		      context->gdt[i], &context->gdt[i]);
 	}
@@ -212,7 +219,7 @@ UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page)
 	context->gdtr = (struct descriptor_register *)gdtr_addr;
 	Print(L"gdtr addr = 0x%lx\r\n", (UINT64)context->gdtr);
 
-	context->gdtr->offset = (UINT64)context->gdt;
+	context->gdtr->offset = 0x01000000 + (gdt_addr - (UINT64)context->vmm);
 	context->gdtr->limit = (sizeof(UINT64) * 12) - 1;
 
 	Print(L"gdtr->offset = 0x%lx\r\n", context->gdtr->offset);
@@ -281,24 +288,24 @@ UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page,
 	pde = (UINT64 *)free_page;
 	free_page += PAGE_4KB;
 
-	ZeroMem((void*)pdpte, sizeof(UINT64*));
-	ZeroMem((void*)pde, sizeof(UINT64*) * 12);
+	ZeroMem((void*)pdpte, PAGE_4KB);
+	ZeroMem((void*)pde, PAGE_4KB);
 
 	context->pml4[0] |= (UINT64)pdpte | PRESENT_MASK | READ_WRITE_MASK;
 	pdpte[0] |= (UINT64)pde | PRESENT_MASK | READ_WRITE_MASK;
 
-	for (UINT64 i = 0; i < 10; ++i) {
-		pde[i] =
-			(i * PAGE_2MB) & PHY_ADDRESS_MASK; /* 0 ~ 20mb*/
-		pde[i] |= PDE_FALGS_MASK;
+	for (UINT64 i = 0; i < 8; ++i) {
+		*(UINT64*)(&pde[i]) =
+			(i * PAGE_2MB) & PHY_ADDRESS_MASK; /* 0 ~ 16mb*/
+		*(UINT64*)(&pde[i]) |= PDE_FALGS_MASK;
 	}
 
 	__vmm_mapping(context, pde, &free_page);
 	// 16mb + 6mb = 16mb - 18mb - 20mb - 22mb.
 	// 16mb = 2mb mapping ps = 0.
 	// 6mb  = 4kb mapping ps = 1.
-	__print_2mb(context, pdpte, pde);
-	__print_4kb((UINT64*)pde[10], (UINT64*)pde[11], (UINT64*)pde[12]);
+	//__print_2mb(context, pdpte, pde);
+	//__print_4kb((UINT64*)pde[8], (UINT64*)pde[9], (UINT64*)pde[10]);
 
 	return free_page;
 }
@@ -308,7 +315,7 @@ static void EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
 {
 	UINT64 *pte0, *pte1, *pte2, current;
 
-	current = (UINT64)context->vmm;
+	current = context->vmm;
 
 	pte0 = (UINT64*)*free_page;
 	*free_page += PAGE_4KB;
@@ -317,36 +324,32 @@ static void EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
 	pte2 = (UINT64*)*free_page;
 	*free_page += PAGE_4KB;
 
-	ZeroMem((void*)pte0, sizeof(UINT64*) * 512);
-	ZeroMem((void*)pte1, sizeof(UINT64*) * 512);
-	ZeroMem((void*)pte2, sizeof(UINT64*) * 512);
+	ZeroMem((void*)pte0, PAGE_4KB);
+	ZeroMem((void*)pte1, PAGE_4KB);
+	ZeroMem((void*)pte2, PAGE_4KB);
 
-	pde[10] |= PRESENT_MASK;
-	pde[10] |= READ_WRITE_MASK;
-	pde[10] |= (UINT64)pte0;
-	pde[11] |= PRESENT_MASK;
-	pde[11] |= READ_WRITE_MASK;
-	pde[11] |= (UINT64)pte1;
-	pde[12] |= PRESENT_MASK;
-	pde[12] |= READ_WRITE_MASK;
-	pde[12] |= (UINT64)pte2;
+	pde[8] = (UINT64)pte0;
+	pde[8] |= READ_WRITE_MASK | BASIC_FLAGS_MASK;
+	pde[9] = (UINT64)pte1;
+	pde[9] |= READ_WRITE_MASK | BASIC_FLAGS_MASK;
+	pde[10] = (UINT64)pte2;
+	pde[10] |= READ_WRITE_MASK | BASIC_FLAGS_MASK;
 
 	for (UINT64 i = 0; i < 512; ++i) {
 		pte0[i] = (current + (4096 * i)) & PHY_ADDRESS_MASK;
-		pte0[i] |= PRESENT_MASK;
 		pte0[i] |= READ_WRITE_MASK;
 	}
 
 	current += 0x00200000;
 	for (UINT64 i = 0; i < 512; ++i) {
-		pte1[i] = (current + (4096 * i)) & PHY_ADDRESS_MASK;
-		pte1[i] |= PRESENT_MASK;
+		pte1[i] =
+			(current + (4096 * i)) & PHY_ADDRESS_MASK;
 		pte1[i] |= READ_WRITE_MASK;
 	}
-	current += 0x00400000;
+	current += 0x00200000;
 	for (UINT64 i = 0; i < 512; ++i) {
-		pte2[i] = (current + (4096 * i)) & PHY_ADDRESS_MASK;
-		pte2[i] |= PRESENT_MASK;
+		pte2[i] = 
+			(current + (4096 * i)) & PHY_ADDRESS_MASK;
 		pte2[i] |= READ_WRITE_MASK;
 	}
 }
@@ -467,48 +470,47 @@ struct uefi_state_struct *create_uefi_state(void)
 	return uefi_state;
 }
 
-void EFIAPI start_uefi_setup(struct uefi_state_struct *uefi_state)
+void EFIAPI start_uefi_setup(struct uefi_state_struct *state)
 {
-	__set_control_registers(uefi_state);
-	__set_segment_registers(uefi_state);
-	__set_gdtr_idtr(uefi_state);
+	__set_control_registers(state);
+	__set_segment_registers(state);
+	__set_gdtr_idtr(state);
 }
 
-static void EFIAPI __set_control_registers(struct uefi_state_struct *uefi_state)
+static void EFIAPI __set_control_registers(struct uefi_state_struct *state)
 {
-	uefi_state->cr0 = AsmReadCr0();
-	uefi_state->cr2 = AsmReadCr2();
-	uefi_state->cr3 = AsmReadCr3();
-	uefi_state->cr4 = AsmReadCr4();
+	state->cr0 = AsmReadCr0();
+	state->cr2 = AsmReadCr2();
+	state->cr3 = AsmReadCr3();
+	state->cr4 = AsmReadCr4();
 }
 
-static void EFIAPI __set_segment_registers(struct uefi_state_struct *uefi_state)
+static void EFIAPI __set_segment_registers(struct uefi_state_struct *state)
 {
-	uefi_state->cs.selector = AsmReadCs();
-	uefi_state->ss.selector = AsmReadSs();
-	uefi_state->ds.selector = AsmReadDs();
-	uefi_state->es.selector = AsmReadGs();
-	uefi_state->fs.selector = AsmReadFs();
-	uefi_state->gs.selector = AsmReadGs();
+	state->cs.selector = AsmReadCs();
+	state->ss.selector = AsmReadSs();
+	state->ds.selector = AsmReadDs();
+	state->es.selector = AsmReadGs();
+	state->fs.selector = AsmReadFs();
+	state->gs.selector = AsmReadGs();
 }
 
-static void EFIAPI __set_gdtr_idtr(struct uefi_state_struct *uefi_state)
+static void EFIAPI __set_gdtr_idtr(struct uefi_state_struct *state)
 {
 	struct descriptor_register desc;
 
 	ZeroMem((void*)&desc, sizeof(struct descriptor_register));
 	AsmReadGdtr((IA32_DESCRIPTOR*)&desc);
-	uefi_state->gdtr.limit = desc.limit;
-	uefi_state->gdtr.offset = desc.offset;
+	state->gdtr.limit = desc.limit;
+	state->gdtr.offset = desc.offset;
 
 	ZeroMem((void*)&desc, sizeof(struct descriptor_register));
 	AsmReadIdtr((IA32_DESCRIPTOR*)&desc);
-	uefi_state->idtr.limit = desc.limit;
-	uefi_state->idtr.offset = desc.offset;	
+	state->idtr.limit = desc.limit;
+	state->idtr.offset = desc.offset;	
 }
 
-static void EFIAPI __set_msr_etc(struct uefi_state_struct *uefi_state)
-{
-	//uefi_state->fs.base = AsmReadMsr64();
-	//uefi_state->gs.base = AsmReadMsr64();
-}
+// static void EFIAPI __set_msr_etc(struct uefi_state_struct *state)
+// {
+	
+// }

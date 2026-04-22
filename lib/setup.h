@@ -135,7 +135,7 @@ struct vmm_context {
 	EFI_PHYSICAL_ADDRESS vmm;
 	EFI_PHYSICAL_ADDRESS vmm_stack;
 	EFI_PHYSICAL_ADDRESS vmcs;
-	EFI_PHYSICAL_ADDRESS trampoline_address;
+	EFI_PHYSICAL_ADDRESS enter_vmm_addr;
 	EFI_PHYSICAL_ADDRESS ap_entry_page;
 	UINT64 vmm_stack_size;
 
@@ -145,9 +145,9 @@ struct vmm_context {
 	struct descriptor_register *gdtr;
 	//struct descriptor_register *idtr;
 
+	UINT64 *pml4;
 	struct task_state_segment32 tss32;
 	struct task_state_segment64 tss64;
-	UINT64 *pml4;
 	//UINT64 *pdpte;
 	//UINT64 *pde;
 	//UINT64 *pte;
@@ -272,10 +272,6 @@ EFI_STATUS EFIAPI read_vmm_binary(struct vmm_context *context,
 struct uefi_state_struct *create_uefi_state(void);
 
 void EFIAPI start_uefi_setup(struct uefi_state_struct *uefi_state);
-static void EFIAPI __set_control_registers(struct uefi_state_struct *uefi_state);
-static void EFIAPI __set_segment_registers(struct uefi_state_struct *uefi_state);
-static void EFIAPI __set_gdtr_idtr(struct uefi_state_struct *uefi_state);
-static void EFIAPI __set_msr_etc(struct uefi_state_struct *uefi_state);
 
 
 /*
