@@ -1,19 +1,16 @@
 #ifndef _SETUP_H
 #define _SETUP_H
 
-#define PAGE_4KB 0x1000
+#define PAGE_4KB 0x00001000
 #define PAGE_MASK (~(PAGE_4KB - 1))
 
-#define MIN_PAGE_NUM 0xf
-#define PAGE_2MB 0x200000
-
-#define PRESENT_MASK 0x1
-#define READ_WRITE_MASK 0x2
+#define PAGE_2MB 0x00200000
 
 #define BASIC_FLAGS_MASK 0x3
-#define PDE_FALGS_MASK 0x87
+#define PDE_FLAGS_MASK 0x83
 
-#define PHY_ADDRESS_MASK 0x000FFFFFFFFFF000ULL
+//#define PHY_ADDRESS_MASK 0x000FFFFFFFFFF000ULL
+//#define PHY_ADDRESS_MASK2 0x000FFFFFFFF00000ULL
 
 #define X86_NULL_DESCRIPTOR 0x00000000000000
 #define X86_KERNEL_CODE_SEGMENT 0x00CF9A000FFFFF
@@ -26,14 +23,6 @@
 #define X64_KERNEL_DATA_SEGMENT 0x00CF92000FFFFF
 #define X64_USER_CODE_SEGMENT 0x00AFFA000FFFFF
 #define X64_USER_DATA_SEGMENT 0x00CFF2000FFFFF
-
-#define offset_of(type, member) ((size_t)&(((type *)0)->member))
-
-#define container_of(ptr, type, member)                                        \
-	({                                                                     \
-		void *__mptr = (void *)ptr(type *)((char *)__mptr -            \
-						   offset_of(type, member));   \
-	})
 
 #pragma pack(push, 2)
 struct descriptor_register {
@@ -132,25 +121,25 @@ struct processor_struct {
 
 #pragma pack(push, 8)
 struct vmm_context {
-	EFI_PHYSICAL_ADDRESS vmm;
-	EFI_PHYSICAL_ADDRESS vmm_stack;
-	EFI_PHYSICAL_ADDRESS vmcs;
-	EFI_PHYSICAL_ADDRESS enter_vmm_addr;
-	EFI_PHYSICAL_ADDRESS ap_entry_page;
+	EFI_PHYSICAL_ADDRESS vmm; // 0x0
+	EFI_PHYSICAL_ADDRESS vmm_stack; // 8
+	EFI_PHYSICAL_ADDRESS vmcs; // 10
+	EFI_PHYSICAL_ADDRESS enter_vmm_addr; // 18
+	EFI_PHYSICAL_ADDRESS ap_entry_page; // 20
 	UINT64 vmm_stack_size;
 
-	UINT64 *gdt;
+	UINT64 *gdt; // 30
 	//struct idt_entry idt[256];
 
-	struct descriptor_register *gdtr;
+	struct descriptor_register *gdtr; // 38
 	//struct descriptor_register *idtr;
 
-	UINT64 *pml4;
-	struct task_state_segment32 tss32;
-	struct task_state_segment64 tss64;
+	UINT64 *pml4; // 40
 	//UINT64 *pdpte;
 	//UINT64 *pde;
 	//UINT64 *pte;
+	struct task_state_segment32 tss32;
+	struct task_state_segment64 tss64;
 
 	UINTN rflags;
 
@@ -169,16 +158,19 @@ struct vmm_context {
 	void(EFIAPI *start)(struct vmm_context *context);
 
 	UINT64(EFIAPI *set_gdt)(struct vmm_context *context, UINT64 free_page);
-	UINT64(EFIAPI *set_idt)(struct vmm_context *context, UINT64 free_page);
+	//UINT64(EFIAPI *set_idt)(struct vmm_context *context, UINT64 free_page);
 	void(EFIAPI *set_tss)(struct vmm_context *context);
 
 	void(EFIAPI *get_memory_map)(struct vmm_context *context);
 	
 	UINT64(EFIAPI *set_page_table)(struct vmm_context *context,
-				   UINT64 free_page, UINT64 mapping_2mb_addr);
+				   UINT64 free_page);
 
 	UINT64(EFIAPI *start_aps)(struct vmm_context *context,
 				  UINT64 free_page);
+
+	void(EFIAPI *done)(struct vmm_context *context,
+			   struct vmm_parameters *vmm_parameter);
 
 	EFI_FILE_PROTOCOL *(EFIAPI *open_vmm)(EFI_HANDLE image_handle);
 	UINTN(EFIAPI *vmm_size)(EFI_FILE_PROTOCOL *vmm_img);
@@ -223,15 +215,10 @@ struct uefi_state_struct {
 
 	UINT64 dr7;
 
-	UINT64 msr_efer;
-	UINT64 msr_lme;
+	UINT64 msr;
 	
 	UINT64 core_num;
-
-	UINT64 fs_base;
-	UINT64 gs_base;
 	UINT64 entry_page_ap;
-	UINT64 uncached;
 
 	struct descriptor_register gdtr;
 	struct descriptor_register idtr;
@@ -241,40 +228,30 @@ struct uefi_state_struct {
 };
 #pragma pack(pop)
 
-struct vmm_context *create_vmm_context();
+#pragma pack(push, 8)
+struct vmm_parameters {
+	EFI_PHYSICAL_ADDRESS uefi_state_address;
+	EFI_PHYSICAL_ADDRESS vmm_entry;
+	EFI_PHYSICAL_ADDRESS vmm_stack;
+	EFI_PHYSICAL_ADDRESS vmcs;
+	EFI_PHYSICAL_ADDRESS pml4;
+	EFI_PHYSICAL_ADDRESS extra_memory;
+	UINT64 extra_memory_size;
+	EFI_PHYSICAL_ADDRESS ap_entry_page;
+	EFI_PHYSICAL_ADDRESS memory_map; // actually not need it
+	UINT64 map_size;
+};
+#pragma pack(pop)
 
-void EFIAPI init_vmm_context(struct vmm_context *context);
-void EFIAPI start_setup(struct vmm_context *context);
 
-UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page);
-void EFIAPI setup_tss_x86_x64(struct vmm_context *context);
-static void EFIAPI setup_tss_2_gdt(struct vmm_context *context);
-
-UINT64 EFIAPI setup_idt(struct vmm_context *context, UINT64 free_page);
-
-UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page,
-			       UINT64 mapping_2mb_addr);
-static void EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
-				 UINT64 *free_page);
-static void EFIAPI __print_2mb(struct vmm_context *context,
-				      UINT64 *pdpte, UINT64 *pde);
-static void EFIAPI __print_4kb(UINT64 *pte0, UINT64 *pte1, UINT64 *pte2);
-
-void EFIAPI setup_memory_map(struct vmm_context *context);
-
-UINT64 EFIAPI start_ap_wake_up(struct vmm_context *context, UINT64 free_page);
-
-EFI_FILE_PROTOCOL *open_vmm_binary(EFI_HANDLE image_handle);
-UINTN EFIAPI get_vmm_size(EFI_FILE_PROTOCOL *vmm_img);
-EFI_STATUS EFIAPI read_vmm_binary(struct vmm_context *context,
-				  EFI_FILE_PROTOCOL *vmm_img);
-
+// vmm context -------------------------------------------------
+struct vmm_context *create_vmm_context(void);
 struct uefi_state_struct *create_uefi_state(void);
-
-void EFIAPI start_uefi_setup(struct uefi_state_struct *uefi_state);
+struct vmm_parameters *create_vmm_parameters(void);
 
 
 /*
+using in vmm
 
 %macro isr_err_stub 1
 isr_stub_%+%1:
