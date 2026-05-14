@@ -12,8 +12,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 			   IN EFI_SYSTEM_TABLE *SystemTable);
 
 extern void enter_vmm(struct vmm_context *context,
-		      struct uefi_state_struct *uefi_state,
-		      struct vmm_parameters *vmm_parameter);
+		      struct uefi_state_struct *uefi_state);
 
 extern void exit_vmm(void);
 

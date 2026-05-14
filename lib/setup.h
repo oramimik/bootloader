@@ -135,9 +135,9 @@ struct vmm_context {
 	//struct descriptor_register *idtr;
 
 	UINT64 *pml4; // 40
-	//UINT64 *pdpte;
-	//UINT64 *pde;
-	//UINT64 *pte;
+	UINT64 *pdpte;
+	UINT64 *pde;
+	UINT64 *pte;
 	struct task_state_segment32 tss32;
 	struct task_state_segment64 tss64;
 
@@ -154,8 +154,11 @@ struct vmm_context {
 	UINT64 vmm_bin_size;
 	UINT64 capacity;
 
+	UINT64 current_free_page;
+
 	void(EFIAPI *init)(struct vmm_context *context);
-	void(EFIAPI *start)(struct vmm_context *context);
+	void(EFIAPI *start)(struct vmm_context *context,
+			    struct uefi_state_struct *uefi_state);
 
 	UINT64(EFIAPI *set_gdt)(struct vmm_context *context, UINT64 free_page);
 	//UINT64(EFIAPI *set_idt)(struct vmm_context *context, UINT64 free_page);
@@ -238,8 +241,8 @@ struct vmm_parameters {
 	EFI_PHYSICAL_ADDRESS extra_memory;
 	UINT64 extra_memory_size;
 	EFI_PHYSICAL_ADDRESS ap_entry_page;
-	EFI_PHYSICAL_ADDRESS memory_map; // actually not need it
-	UINT64 map_size;
+	//EFI_PHYSICAL_ADDRESS memory_map; // actually not need it
+	//UINT64 map_size;
 };
 #pragma pack(pop)
 
@@ -248,60 +251,5 @@ struct vmm_parameters {
 struct vmm_context *create_vmm_context(void);
 struct uefi_state_struct *create_uefi_state(void);
 struct vmm_parameters *create_vmm_parameters(void);
-
-
-/*
-using in vmm
-
-%macro isr_err_stub 1
-isr_stub_%+%1:
-	call exception_handler
-	iret
-%endmacro
-
-%macro isr_no_err_stub 1
-isr_stub_%+%1:
-	call exception_handler
-	iret
-%endmacro
-
-isr_no_err_stub 0
-isr_no_err_stub 1
-isr_no_err_stub 2
-isr_no_err_stub 3
-isr_no_err_stub 4
-isr_no_err_stub 5
-isr_no_err_stub 6
-isr_no_err_stub 7
-isr_err_stub    8
-isr_no_err_stub 9
-isr_err_stub    10
-isr_err_stub    11
-isr_err_stub    12
-isr_err_stub    13
-isr_err_stub    14
-isr_no_err_stub 15
-isr_no_err_stub 16
-isr_err_stub    17
-isr_no_err_stub 18
-isr_no_err_stub 19
-isr_no_err_stub 20
-isr_no_err_stub 21
-isr_no_err_stub 22
-isr_no_err_stub 23
-isr_no_err_stub 24
-isr_no_err_stub 25
-isr_no_err_stub 26
-isr_no_err_stub 27
-isr_no_err_stub 28
-isr_no_err_stub 29
-isr_err_stub    30
-isr_no_err_stub 31
-
-global exception_handler:
-exception_handler:
-	cli
-	hlt
-*/
 
 #endif

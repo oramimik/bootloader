@@ -23,35 +23,41 @@ static void EFIAPI __get_gdtr_idtr(struct uefi_state_struct *state);
 // vmm context -------------------------------------------------
 static UINT64 EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
 				 UINT64 free_page);
-static void EFIAPI __print_2mb(struct vmm_context *context, UINT64 *pdpte,
-			       UINT64 *pde);
+static UINT64 EFIAPI __extra_mapping(struct vmm_context *context,
+				     struct vmm_parameters *parameters);
+
+static void EFIAPI __print_2mb(struct vmm_context *context);
 static void EFIAPI __print_4kb(UINT64 *pte1, UINT64 *pte2, UINT64 *pte3);
 
 // -----------------
-static void EFIAPI init_vmm_context(struct vmm_context *context);
-static void EFIAPI start_setup(struct vmm_context *context);
+static void EFIAPI __init_vmm_context(struct vmm_context *context);
+static void EFIAPI __start_setup(struct vmm_context *context,
+				 struct uefi_state_struct *uefi_state);
 
-static UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page);
-static void EFIAPI setup_tss_x86_x64(struct vmm_context *context);
-static void EFIAPI setup_tss_2_gdt(struct vmm_context *context);
+static UINT64 EFIAPI __setup_gdt(struct vmm_context *context, UINT64 free_page);
+static void EFIAPI __setup_tss_x86_x64(struct vmm_context *context);
+static void EFIAPI __setup_tss_2_gdt(struct vmm_context *context);
 
 // static UINT64 EFIAPI setup_idt(struct vmm_context *context, UINT64
 // free_page);
 
-static UINT64 EFIAPI setup_page_table(struct vmm_context *context,
+static UINT64 EFIAPI __setup_page_table(struct vmm_context *context,
 				      UINT64 free_page);
 
-static void EFIAPI setup_memory_map(struct vmm_context *context);
+static void EFIAPI __setup_memory_map(struct vmm_context *context);
 
-static UINT64 EFIAPI start_ap_wake_up(struct vmm_context *context,
+static UINT64 EFIAPI __start_ap_wake_up(struct vmm_context *context,
 				      UINT64 free_page);
 
-static void EFIAPI setup_vmm_parameters(struct vmm_context *context,
+static void EFIAPI __setup_vmm_parameters(struct vmm_context *context,
 					struct vmm_parameters *vmm_paramter);
 
-static EFI_FILE_PROTOCOL *open_vmm_binary(EFI_HANDLE image_handle);
-static UINTN EFIAPI get_vmm_size(EFI_FILE_PROTOCOL *vmm_img);
-static EFI_STATUS EFIAPI read_vmm_binary(struct vmm_context *context,
+static void EFIAPI
+__print_vmm_parameters(struct vmm_parameters *parameters);
+
+static EFI_FILE_PROTOCOL *__open_vmm_binary(EFI_HANDLE image_handle);
+static UINTN EFIAPI __get_vmm_size(EFI_FILE_PROTOCOL *vmm_img);
+static EFI_STATUS EFIAPI __read_vmm_binary(struct vmm_context *context,
 					 EFI_FILE_PROTOCOL *vmm_img);
 // vmm context -------------------------------------------------
 
@@ -67,27 +73,27 @@ struct vmm_context *create_vmm_context(void)
 	gBS->AllocatePool(EfiRuntimeServicesData, size, (void **)&context);
 	ZeroMem((void *)context, size);
 
-	context->init = init_vmm_context;
-	context->start = start_setup;
-	context->set_gdt = setup_gdt;
+	context->init = __init_vmm_context;
+	context->start = __start_setup;
+	context->set_gdt = __setup_gdt;
 	//context->set_idt = setup_idt;
-	context->set_tss = setup_tss_x86_x64;
-	context->set_page_table = setup_page_table;
+	context->set_tss = __setup_tss_x86_x64;
+	context->set_page_table = __setup_page_table;
 
-	context->done = setup_vmm_parameters;
+	context->done = __setup_vmm_parameters;
 
-	context->open_vmm = open_vmm_binary;
-	context->vmm_size = get_vmm_size;
-	context->read_vmm = read_vmm_binary;
+	context->open_vmm = __open_vmm_binary;
+	context->vmm_size = __get_vmm_size;
+	context->read_vmm = __read_vmm_binary;
 
-	context->get_memory_map = setup_memory_map;
+	context->get_memory_map = __setup_memory_map;
 
-	context->start_aps = start_ap_wake_up;
+	context->start_aps = __start_ap_wake_up;
 
 	return context;
 }
 
-static void EFIAPI init_vmm_context(struct vmm_context *context)
+static void EFIAPI __init_vmm_context(struct vmm_context *context)
 {
 	EFI_STATUS status;
 	UINT64 enter_vmm_address;
@@ -115,7 +121,7 @@ static void EFIAPI init_vmm_context(struct vmm_context *context)
 	}
 }
 
-static EFI_FILE_PROTOCOL *open_vmm_binary(EFI_HANDLE image_handle)
+static EFI_FILE_PROTOCOL *__open_vmm_binary(EFI_HANDLE image_handle)
 {
 	EFI_STATUS status;
 	EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *simple;
@@ -156,7 +162,7 @@ static EFI_FILE_PROTOCOL *open_vmm_binary(EFI_HANDLE image_handle)
 	return vmm_bin;
 }
 
-static EFI_STATUS EFIAPI read_vmm_binary(struct vmm_context *context,
+static EFI_STATUS EFIAPI __read_vmm_binary(struct vmm_context *context,
 				  EFI_FILE_PROTOCOL *vmm_img)
 {
 	EFI_STATUS status;
@@ -203,7 +209,7 @@ static EFI_STATUS EFIAPI read_vmm_binary(struct vmm_context *context,
 	return status;
 }
 
-static UINTN EFIAPI get_vmm_size(EFI_FILE_PROTOCOL *vmm_img)
+static UINTN EFIAPI __get_vmm_size(EFI_FILE_PROTOCOL *vmm_img)
 {
 	UINTN bin_size;
 
@@ -213,9 +219,12 @@ static UINTN EFIAPI get_vmm_size(EFI_FILE_PROTOCOL *vmm_img)
 	return bin_size;
 }
 
-static void EFIAPI start_setup(struct vmm_context *context)
+static void EFIAPI __start_setup(struct vmm_context *context,
+				 struct uefi_state_struct *uefi_state)
 {
 	UINT64 free_page;
+	struct vmm_parameters *parameters =
+		(struct vmm_parameters *)(context->vmm + 0x10);
 
 	free_page = context->vmm + context->vmm_bin_size;
 	context->vmm_stack = (EFI_PHYSICAL_ADDRESS)free_page;
@@ -245,10 +254,15 @@ static void EFIAPI start_setup(struct vmm_context *context)
 
 	free_page = context->start_aps(context, free_page);
 
+	context->current_free_page = free_page;
+
 	context->get_memory_map(context);
+
+	parameters->uefi_state_address = (EFI_PHYSICAL_ADDRESS)uefi_state;
+	__setup_vmm_parameters(context, parameters);
 }
 
-static UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page)
+static UINT64 EFIAPI __setup_gdt(struct vmm_context *context, UINT64 free_page)
 {
 	UINT64 gdt_addr, gdtr_addr;
 	UINT64 new_gdt_offset;
@@ -266,7 +280,7 @@ static UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page)
 	context->gdt[8] = X64_KERNEL_DATA_SEGMENT;
 	context->gdt[9] = X64_USER_CODE_SEGMENT;
 	context->gdt[10] = X64_USER_DATA_SEGMENT;
-	setup_tss_2_gdt(context);
+	__setup_tss_2_gdt(context);
 
 	for (UINT64 i = 0; i < 12; ++i) {
 		Print(L"GDT[%llu] = 0x%lx, addr = 0x%lx\r\n", i,
@@ -294,7 +308,7 @@ static UINT64 EFIAPI setup_gdt(struct vmm_context *context, UINT64 free_page)
 	return free_page;
 }
 
-static void EFIAPI setup_tss_x86_x64(struct vmm_context *context)
+static void EFIAPI __setup_tss_x86_x64(struct vmm_context *context)
 {
 	ZeroMem((void *)&context->tss32, sizeof(struct task_state_segment32));
 	ZeroMem((void *)&context->tss64, sizeof(struct task_state_segment64));
@@ -310,7 +324,7 @@ static void EFIAPI setup_tss_x86_x64(struct vmm_context *context)
 	context->tss64.io_map_base_addr = sizeof(struct task_state_segment64);
 }
 
-static void EFIAPI setup_tss_2_gdt(struct vmm_context *context)
+static void EFIAPI __setup_tss_2_gdt(struct vmm_context *context)
 {
 	UINT64 tss_addr;
 
@@ -336,39 +350,37 @@ static void EFIAPI setup_tss_2_gdt(struct vmm_context *context)
 //	return free_page;
 //}
 
-static UINT64 EFIAPI setup_page_table(struct vmm_context *context, UINT64 free_page)
+static UINT64 EFIAPI __setup_page_table(struct vmm_context *context, UINT64 free_page)
 {
-	UINT64 *pdpte, *pde;
-
 	context->pml4 = (UINT64 *)free_page;
 	free_page += PAGE_4KB;
-	pdpte = (UINT64 *)free_page;
+	context->pdpte = (UINT64 *)free_page;
 	free_page += PAGE_4KB;
-	pde = (UINT64 *)free_page;
+	context->pde = (UINT64 *)free_page;
 	free_page += PAGE_4KB;
 
 	ZeroMem((void *)context->pml4, PAGE_4KB);
-	ZeroMem((void *)pdpte, PAGE_4KB);
-	ZeroMem((void *)pde, PAGE_4KB);
+	ZeroMem((void *)context->pdpte, PAGE_4KB);
+	ZeroMem((void *)context->pde, PAGE_4KB);
 
 	for (UINT64 i = 0; i < 2; ++i) {
-		pde[i] = (i * PAGE_2MB); /* 0 ~ 4mb*/
-		pde[i] |= PDE_FLAGS_MASK;
+		context->pde[i] = (i * PAGE_2MB); /* 0 ~ 4mb*/
+		context->pde[i] |= PDE_FLAGS_MASK;
 	}
 
-	free_page = __vmm_mapping(context, pde, free_page);
+	free_page = __vmm_mapping(context, context->pde, free_page);
 
-	pdpte[0] = (UINT64)pde | BASIC_FLAGS_MASK;
-	context->pml4[0] = (UINT64)pdpte | BASIC_FLAGS_MASK;
+	context->pdpte[0] = (UINT64)context->pde | BASIC_FLAGS_MASK;
+	context->pml4[0] = (UINT64)context->pdpte | BASIC_FLAGS_MASK;
 	Print(L"\r\n\r\n");
 
 	Print(L"\r\n\r\n");
 	// 4mb + 6mb = 0 - 2 - 4 - 6 - 8 - 10
-	__print_2mb(context, pdpte, pde);
+	__print_2mb(context);
 	//__print_4kb(&pde[2], &pde[3], &pde[4]);
 
-	Print(L"pdpte = 0x%llx\r\n", pdpte);
-	Print(L"pdpte[0] = 0x%llx\r\n", pdpte[0]);
+	Print(L"pdpte = 0x%llx\r\n", context->pdpte);
+	Print(L"pdpte[0] = 0x%llx\r\n", context->pdpte[0]);
 	Print(L"pml4[0] = 0x%llx\r\n", context->pml4[0]);
 	Print(L"pml4 = 0x%llx\r\n", context->pml4);
 
@@ -412,11 +424,16 @@ static UINT64 EFIAPI __vmm_mapping(struct vmm_context *context, UINT64 *pde,
 	return free_page;
 }
 
-static void EFIAPI __print_2mb(struct vmm_context *context, UINT64 *pdpte,
-			       UINT64 *pde)
+static void EFIAPI __print_2mb(struct vmm_context *context)
 {
-	for (UINT64 i = 0; i < 5; ++i) {
-		Print(L"pde[%llu] = 0x%llx ", i, pde[i]);
+	if (context->pde[5] != 0) {
+		for (UINT64 i = 0; i < 69; ++i) {
+			Print(L"pde[%llu] = 0x%llx ", i, context->pde[i]);
+		}
+	} else {
+		for (UINT64 i = 0; i < 5; ++i) {
+			Print(L"pde[%llu] = 0x%llx\r\n", i, context->pde[i]);
+		}
 	}
 	Print(L"\r\n\r\n");
 }
@@ -442,7 +459,7 @@ static void EFIAPI __print_4kb(UINT64 *pte1, UINT64 *pte2, UINT64 *pte3)
 	Print(L"\r\n\r\n");
 }
 
-void EFIAPI setup_memory_map(struct vmm_context *context)
+void EFIAPI __setup_memory_map(struct vmm_context *context)
 {
 	EFI_STATUS status;
 	UINT64 size;
@@ -468,7 +485,7 @@ void EFIAPI setup_memory_map(struct vmm_context *context)
 	size = context->map_size;
 }
 
-static UINT64 EFIAPI start_ap_wake_up(struct vmm_context *context, UINT64 free_page)
+static UINT64 EFIAPI __start_ap_wake_up(struct vmm_context *context, UINT64 free_page)
 {
 	EFI_MP_SERVICES_PROTOCOL *mp;
 	UINT64 free, end_addr;
@@ -497,25 +514,53 @@ static UINT64 EFIAPI start_ap_wake_up(struct vmm_context *context, UINT64 free_p
 	      ((end_addr + (PAGE_4KB - 1)) & PAGE_MASK));
 	free_page = ((end_addr + (PAGE_4KB - 1)) & PAGE_MASK);
 
-	free_page += 4096;
+	free_page += PAGE_4KB;
 
 	return free_page;
 }
 
-static void EFIAPI setup_vmm_parameters(struct vmm_context *context,
-				 struct vmm_parameters *vmm_parameter)
+static void EFIAPI __setup_vmm_parameters(struct vmm_context *context,
+				 struct vmm_parameters *parameters)
 {
-	vmm_parameter->vmm_entry = context->vmm;
-	vmm_parameter->vmm_stack = context->vmm_stack;
-	vmm_parameter->vmcs = context->vmcs;
-	vmm_parameter->pml4 = (EFI_PHYSICAL_ADDRESS)context->pml4;
-	vmm_parameter->extra_memory_size = 0x8000;
-	vmm_parameter->ap_entry_page = context->ap_entry_page;
-	vmm_parameter->memory_map = (EFI_PHYSICAL_ADDRESS)context->memory_desc;
-	vmm_parameter->map_size = context->map_size;
+	UINT64 j;
+
+	parameters->vmm_entry = context->vmm;
+	parameters->vmm_stack = (UINT64)0x00400000 + (UINT64)0x8000 +
+				   (context->vmm_stack - context->vmm);
+	parameters->vmcs =
+		(UINT64)0x00400000 + (context->vmcs - context->vmm);
+	parameters->extra_memory_size = 0x8000000;
+	parameters->ap_entry_page = context->ap_entry_page;
+	//vmm_parameter->memory_map = (EFI_PHYSICAL_ADDRESS)context->memory_desc;
+	//vmm_parameter->map_size = context->map_size;
 
 	gBS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesCode, 0x8000,
-			   &vmm_parameter->extra_memory);
+			   &parameters->extra_memory);
+
+	j = 0;
+	for (UINT64 i = 5; i < 69; ++i) {
+		context->pde[i] =
+			(parameters->extra_memory + (j * PAGE_2MB)) |
+			PDE_FLAGS_MASK;
+		++j;
+	}
+
+	parameters->pml4 = (UINT64)0x00400000 +
+			      ((EFI_PHYSICAL_ADDRESS)context->pml4 -
+			      context->vmm);
+
+	__print_vmm_parameters(parameters);
+}
+
+static void EFIAPI __print_vmm_parameters(struct vmm_parameters *parameters)
+{
+	Print(L"vmm entry = 0x%llx\r\n", parameters->vmm_entry);
+	Print(L"vmm stack = 0x%llx\r\n", parameters->vmm_stack);
+	Print(L"vmcs = 0x%llx\r\n", parameters->vmcs);
+	Print(L"extra memory entry = 0x%llx\r\n", parameters->extra_memory);
+	Print(L"extra memory size  = 0x%llx\r\n", parameters->extra_memory_size);
+	Print(L"ap entry page = 0x%llx\r\n", parameters->ap_entry_page);
+	Print(L"pml4 = 0x%llx\r\n", parameters->pml4);
 }
 
 struct uefi_state_struct *create_uefi_state(void)
@@ -587,15 +632,3 @@ static void EFIAPI __get_gdtr_idtr(struct uefi_state_struct *state)
 // {
 
 // }
-
-struct vmm_parameters *create_vmm_parameters(void)
-{
-	struct vmm_parameters *vmm_paramter;
-
-	gBS->AllocatePool(EfiRuntimeServicesData, sizeof(struct vmm_parameters),
-			  (void **)&vmm_paramter);
-
-	ZeroMem((void *)vmm_paramter, sizeof(struct vmm_parameters));
-
-	return vmm_paramter;
-}

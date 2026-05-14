@@ -9,10 +9,28 @@
 #include "init/boot.h"
 #include "lib/setup.h"
 
+static void EFIAPI __free(struct vmm_context *context,
+			  struct uefi_state_struct *uefi_state);
+
 void EFIAPI init_services(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
 	gST = SystemTable;
 	gBS = SystemTable->BootServices;
+}
+
+static void EFIAPI __free(struct vmm_context *context,
+			  struct uefi_state_struct *uefi_state)
+{
+	gBS->FreePages(context->ap_entry_page, 1);
+	context->ap_entry_page = 0;
+
+	gBS->FreePages(context->enter_vmm_addr, 1);
+	context->enter_vmm_addr = 0;
+
+	gBS->FreePool((void *)uefi_state);
+	uefi_state = NULL;
+
+	Print(L"\r\nclear dummy memory\r\n");
 }
 
 EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
@@ -21,7 +39,6 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 	EFI_FILE_PROTOCOL *vmm_bin;
 	struct vmm_context *context;
 	struct uefi_state_struct *uefi_state;
-	struct vmm_parameters *vmm_parameter;
 
 	DEBUG((DEBUG_INFO, "this is vmm bootloader entry\n"));
 
@@ -29,7 +46,6 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 
 	uefi_state = create_uefi_state();
 	context = create_vmm_context();
-	vmm_parameter = create_vmm_parameters();
 
 	uefi_state->start(uefi_state);
 	Print(L"context addr = %lx\r\n", (UINT64 *)context);
@@ -39,19 +55,17 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 	vmm_bin = context->open_vmm(ImageHandle);
 	context->read_vmm(context, vmm_bin);
 
-	context->start(context); /*only vmm size is 6mb, total = 8mb*/
-	vmm_parameter->uefi_state_address = (EFI_PHYSICAL_ADDRESS)uefi_state;
-	context->done(context, vmm_parameter);
+	context->start(context, uefi_state); /*only vmm size is 6mb, total = 8mb*/
 
 	vmm_bin->Close(vmm_bin);
 
 	Print(L"now enter to asm\r\n");
-	enter_vmm(context, uefi_state, vmm_parameter);
+	enter_vmm(context, uefi_state);
 	Print(L"now out from asm\r\n");
 
+	// actually need free memory for clean
 	exit_vmm();
 
-	// i had mistake used to "ExitBootServices"
 	gBS->Exit(ImageHandle, 1, 0, NULL);
 
 	return EFI_SUCCESS;

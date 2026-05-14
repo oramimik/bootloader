@@ -109,4 +109,15 @@ ezpz:
 	jmp far rax
 
 exit_vmm:
+	mov rdx, [rel uefi_state]
+
+	mov rbx, [rdx + uefi_state.ss]
+	mov ss, bx
+
+	mov rbx, [rdx + uefi_state.gs]
+	mov gs, bx
+
+	mov rbx, [rdx + uefi_state.es]
+	mov es, bx
+
 	ret
