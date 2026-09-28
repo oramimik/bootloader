@@ -184,8 +184,12 @@ static EFI_STATUS EFIAPI __read_vmm_binary(struct vmm_context *context,
 	vmm_img->SetPosition(vmm_img, 0);
 	context->vmm_bin_size = (UINT64)__get_vmm_size(vmm_img);
 	total_size = (UINTN)context->vmm_bin_size + 0x00200000;
-	context->capacity = EFI_SIZE_TO_PAGES(total_size);
 
+	Print(L"TOTAL SIZE = %llx\r\n", total_size);
+	context->capacity = EFI_SIZE_TO_PAGES(total_size);
+	Print(L"TOTAL PAGES = %llx\r\n", context->capacity);
+
+	Print(L"TOTAL PAGES FOR VMM = 0x%llx\r\n", context->capacity);
 	status = gBS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesCode,
 				    context->capacity, &context->vmm);
 	if (EFI_ERROR(status)) {
@@ -209,11 +213,28 @@ static EFI_STATUS EFIAPI __read_vmm_binary(struct vmm_context *context,
 
 static UINTN EFIAPI __get_vmm_size(EFI_FILE_PROTOCOL *vmm_img)
 {
-	UINTN bin_size;
+	EFI_STATUS status;
+	EFI_FILE_INFO *FileInfo;
+	UINTN bin_size = 0;
 
-	vmm_img->GetInfo(vmm_img, &gEfiFileInfoGuid, &bin_size, NULL);
-	Print(L"vmm binary size = 0x%lx\r\n", bin_size);
+	status = vmm_img->GetInfo(vmm_img, &gEfiFileInfoGuid, &bin_size, NULL);
+	if (status == EFI_BUFFER_TOO_SMALL) {
+		gBS->AllocatePool(EfiLoaderData, bin_size,
+				  (void **)&FileInfo);
+	}
 
+	status = vmm_img->GetInfo(vmm_img, &gEfiFileInfoGuid, &bin_size,
+			 (void *)FileInfo);
+	if (EFI_ERROR(status)) {
+		gBS->FreePool(FileInfo);
+		return 0;
+	}
+
+	Print(L"VMM BINARY NAME = %s\r\n", FileInfo->FileName);
+	Print(L"VMM BINARY SIZE = 0x%llx\r\n", FileInfo->FileSize);
+
+	bin_size = FileInfo->FileSize;
+	gBS->FreePool(FileInfo);
 	return bin_size;
 }
 
@@ -251,7 +272,7 @@ static void EFIAPI __start_setup(struct vmm_context *context,
 	free_page = context->set_page_table(context, free_page);
 
 	free_page = context->start_aps(context, free_page);
-
+	 
 	context->current_free_page = free_page;
 
 	context->get_memory_map(context);
@@ -273,11 +294,13 @@ static UINT64 EFIAPI __setup_gdt(struct vmm_context *context, UINT64 free_page)
 	context->gdt[2] = X86_KERNEL_DATA_SEGMENT;
 	context->gdt[3] = X86_USER_CODE_SEGMENT;
 	context->gdt[4] = X86_USER_DATA_SEGMENT;
+	context->gdt[5] = 0;
 	context->gdt[6] = X64_NULL_DESCRIPTOR;
 	context->gdt[7] = X64_KERNEL_CODE_SEGMENT;
 	context->gdt[8] = X64_KERNEL_DATA_SEGMENT;
 	context->gdt[9] = X64_USER_CODE_SEGMENT;
 	context->gdt[10] = X64_USER_DATA_SEGMENT;
+	context->gdt[11] = 0;
 	__setup_tss_2_gdt(context);
 
 	for (UINT64 i = 0; i < 12; ++i) {
@@ -289,13 +312,15 @@ static UINT64 EFIAPI __setup_gdt(struct vmm_context *context, UINT64 free_page)
 	gdtr_addr = gdt_addr + 112;
 
 	context->gdtr = (struct descriptor_register *)gdtr_addr;
+
+	Print(L"new_gdt_offset = %llx\r\n", new_gdt_offset);
+	Print(L"gdt_address = %llx\r\n", gdt_addr);
 	Print(L"gdtr addr = 0x%lx\r\n", (UINT64)context->gdtr);
 
-	// CopyMem((VOID *)new_gdt_offset, (void*)gdt_addr, sizeof(UINT64) *
-	// 13);
+	CopyMem((VOID *)new_gdt_offset, (void *)gdt_addr, sizeof(UINT64) * 13);
 
 	context->gdtr->offset = new_gdt_offset;
-	context->gdtr->limit = (UINT16)(sizeof(UINT64) * 13) - 1;
+	context->gdtr->limit = (UINT16)(sizeof(UINT64) * 14) - 1;
 
 	Print(L"gdtr->offset = 0x%lx\r\n", context->gdtr->offset);
 	Print(L"gdtr->limit = 0x%lx\r\n", context->gdtr->limit);
@@ -526,11 +551,14 @@ static UINT64 EFIAPI __start_ap_wake_up(struct vmm_context *context, UINT64 free
 	num = context->processor_num;
 	free = sizeof(struct processor_struct) * num;
 
+	#ifdef _DEBUG
 	Print(L"processor number = %llu\r\n", context->processor_num);
 	Print(L"enabled processor number = %llu\r\n",
 	      context->enabled_processor_num);
+	#endif
 
 	mp->WhoAmI(mp, &context->bsp);
+	Print(L"BSP = %llx\r\n", context->bsp);
 
 	/* now we should calc free page pages for next alloc to ap entry page
 	 * !!!!! */
@@ -559,6 +587,9 @@ static UINT64 EFIAPI __setup_vmm_parameters(struct vmm_context *context,
 	parameters->vmcs = (UINT64)0x00400000 + (context->vmcs - context->vmm);
 	parameters->extra_memory_size = 0x8000000;
 	parameters->ap_entry_page = context->ap_entry_page;
+	Print(L"enabled processor num = %llx\r\n",
+	      context->enabled_processor_num);
+	Print(L"processor num = %llx\r\n", context->processor_num);
 	parameters->core_num = context->enabled_processor_num;
 	madt_addr = __get_apic(context); // should be complete
 
