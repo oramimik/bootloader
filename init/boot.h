@@ -1,9 +1,9 @@
 #ifndef _BOOT_H
 #define _BOOT_H
 
-struct vmm_context;
+struct settings_new_environment;
 struct uefi_state_struct;
-struct vmm_parameters;
+struct init_vmm_param;
 
 void EFIAPI init_services(EFI_HANDLE image_handle,
 			  EFI_SYSTEM_TABLE *system_table);
@@ -11,7 +11,7 @@ void EFIAPI init_services(EFI_HANDLE image_handle,
 EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 			   IN EFI_SYSTEM_TABLE *SystemTable);
 
-extern void enter_vmm(struct vmm_context *context,
+extern void enter_vmm(struct settings_new_environment *context,
 		      struct uefi_state_struct *uefi_state);
 
 extern void exit_vmm(void);

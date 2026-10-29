@@ -12,7 +12,7 @@
   DSC_SPECIFICATION             = 0x00010005
   OUTPUT_DIRECTORY              = build/Bootloader
   SUPPORTED_ARCHITECTURES       = X64
-  BUILD_TARGETS                 = DEBUG|RELEASE
+  BUILD_TARGETS                 = DEBUG
 
 [Packages]
   MdePkg/MdePkg.dec

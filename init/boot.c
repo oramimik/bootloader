@@ -12,11 +12,8 @@
 //EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
 //EFI_GRAPHICS_OUTPUT_BLT_PIXEL blt;
 
-static void EFIAPI __free(struct vmm_context *context,
+static void EFIAPI __free(struct settings_new_environment *new_setup,
 			  struct uefi_state_struct *uefi_state);
-
-void EFIAPI __create_painting(void);
-void EFIAPI __init_blt_pixel(void);
 
 void EFIAPI init_services(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
@@ -46,14 +43,14 @@ void EFIAPI init_services(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 //	
 //}
 
-static void EFIAPI __free(struct vmm_context *context,
+static void EFIAPI __free(struct settings_new_environment *new_setup,
 			  struct uefi_state_struct *uefi_state)
 {
-	gBS->FreePages(context->ap_entry_page, 1);
-	context->ap_entry_page = 0;
+	gBS->FreePages(new_setup->ap_entry_page, 1);
+	new_setup->ap_entry_page = 0;
 
-	gBS->FreePages(context->enter_vmm_addr, 1);
-	context->enter_vmm_addr = 0;
+	gBS->FreePages(new_setup->enter_vmm_addr, 1);
+	new_setup->enter_vmm_addr = 0;
 
 	gBS->FreePool((void *)uefi_state);
 	uefi_state = NULL;
@@ -65,7 +62,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 			   IN EFI_SYSTEM_TABLE *SystemTable)
 {
 	EFI_FILE_PROTOCOL *vmm_bin;
-	struct vmm_context *context;
+	struct settings_new_environment *new_setup;
 	struct uefi_state_struct *uefi_state;
 
 	DEBUG((DEBUG_INFO, "this is vmm bootloader entry\n"));
@@ -73,26 +70,28 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 	init_services(ImageHandle, SystemTable);
 
 	uefi_state = create_uefi_state();
-	context = create_vmm_context();
+	new_setup = create_new_enviroment();
 
 	uefi_state->start(uefi_state);
-	Print(L"context addr = %lx\r\n", (UINT64 *)context);
+	gST->ConOut->SetAttribute(gST->ConOut,
+				  EFI_GREEN | EFI_BACKGROUND_BLACK);
+	Print(L"context addr = %lx\r\n", (UINT64 *)new_setup);
 
-	context->init(context);
+	new_setup->init(new_setup);
 
-	vmm_bin = context->open_vmm(ImageHandle);
-	context->read_vmm(context, vmm_bin);
+	vmm_bin = new_setup->open_vmm(ImageHandle);
+	new_setup->read_vmm(new_setup, vmm_bin);
 
-	context->start(context, uefi_state); /*only vmm size is 6mb, total = 8mb*/
+	new_setup->start(new_setup, uefi_state); /*only vmm size is 6mb, total = 8mb*/
 
 	vmm_bin->Close(vmm_bin);
 
 	Print(L"now enter to asm\r\n");
-	enter_vmm(context, uefi_state);
+	enter_vmm(new_setup, uefi_state);
 	Print(L"now out from asm\r\n");
 
 
-	__free(context, uefi_state);
+	__free(new_setup, uefi_state);
 	// actually need free memory for clean
 	exit_vmm();
 

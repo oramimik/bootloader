@@ -120,7 +120,7 @@ struct processor_struct {
 #pragma pack(pop)
 
 #pragma pack(push, 8)
-struct vmm_context {
+struct settings_new_environment {
 	EFI_PHYSICAL_ADDRESS vmm; // 0x0
 	EFI_PHYSICAL_ADDRESS vmm_stack; // 8
 	EFI_PHYSICAL_ADDRESS vmcs; // 10
@@ -158,30 +158,33 @@ struct vmm_context {
 
 	//EFI_GRAPHICS_OUTPUT_PROTOCOL *efi_gop;
 
-	void(EFIAPI *init)(struct vmm_context *context);
-	void(EFIAPI *start)(struct vmm_context *context,
+	void(EFIAPI *init)(struct settings_new_environment *new_setup);
+	void(EFIAPI *start)(struct settings_new_environment *new_setup,
 			    struct uefi_state_struct *uefi_state);
 
-	UINT64(EFIAPI *set_gdt)(struct vmm_context *context, UINT64 free_page);
+	UINT64(EFIAPI *set_gdt)(struct settings_new_environment *new_setup,
+				UINT64 free_page);
 	//UINT64(EFIAPI *set_idt)(struct vmm_context *context, UINT64 free_page);
-	void(EFIAPI *set_tss)(struct vmm_context *context);
+	void(EFIAPI *set_tss)(struct settings_new_environment *new_setup);
 
-	void(EFIAPI *get_memory_map)(struct vmm_context *context);
+	void(EFIAPI *get_memory_map)(
+		struct settings_new_environment *new_setup);
 	
-	UINT64(EFIAPI *set_page_table)(struct vmm_context *context,
+	UINT64(EFIAPI *set_page_table)(
+		struct settings_new_environment *new_setup,
 				   UINT64 free_page);
 
-	UINT64(EFIAPI *start_aps)(struct vmm_context *context,
+	UINT64(EFIAPI *start_aps)(struct settings_new_environment *new_setup,
 				  UINT64 free_page);
 
-	void(EFIAPI *done)(struct vmm_context *context,
-			   struct vmm_parameters *vmm_parameter);
+	void(EFIAPI *done)(struct settings_new_environment *new_setup,
+			   struct init_vmm_param *vmm_parameter);
 
 	EFI_FILE_PROTOCOL *(EFIAPI *open_vmm)(EFI_HANDLE image_handle);
 	UINTN(EFIAPI *vmm_size)(EFI_FILE_PROTOCOL *vmm_img);
-	EFI_STATUS(EFIAPI *read_vmm)(struct vmm_context *context,
+	EFI_STATUS(EFIAPI *read_vmm)(struct settings_new_environment *new_setup,
 				     EFI_FILE_PROTOCOL *vmm_img);
-	//void(EFIAPI *create_gop)(struct vmm_context *context);
+	//void(EFIAPI *create_gop)(struct vmm_context *new_setup);
 };
 #pragma pack(pop)
 
@@ -229,6 +232,12 @@ struct uefi_state_struct {
 	struct descriptor_register gdtr;
 	struct descriptor_register idtr;
 
+	UINT64 gdt_limit;
+	UINT64 gdt_offset;
+
+	UINT64 idt_limit;
+	UINT64 idt_offset;
+
 	void(EFIAPI *start)(struct uefi_state_struct *uefi_state);
 	void(EFIAPI *set_registers)(struct uefi_state_struct *uefi_state);
 };
@@ -246,26 +255,26 @@ struct extended_system_desc_table {
 #pragma pack(pop)
 
 #pragma pack(push, 8)
-struct vmm_parameters {
+struct init_vmm_param {
 	EFI_PHYSICAL_ADDRESS uefi_state_address;
-	EFI_PHYSICAL_ADDRESS vmm_entry;
 	EFI_PHYSICAL_ADDRESS vmm_stack;
-	EFI_PHYSICAL_ADDRESS vmcs;
 	EFI_PHYSICAL_ADDRESS pml4;
-	EFI_PHYSICAL_ADDRESS extra_memory;
-	UINT64 extra_memory_size;
+	EFI_PHYSICAL_ADDRESS extra_memory_pa;
 	EFI_PHYSICAL_ADDRESS ap_entry_page;
+	UINT64 vmm_stack_va;
+	UINT64 extra_memory_entry_va;
+	UINT64 sub_stack_entry_va;
+	UINT64 sub_stack_pages;
 	UINT64 bsp;
-	UINT64 *ipi_address; // must be core ipi address, not cpu count
+	UINT64 *apic_id;
 	UINT64 core_num;
-	//EFI_ACPI_2_0_MULTIPLE_APIC_DESCRIPTION_TABLE_HEADER *madt_address;
-	//EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
+	UINT64 reserved[4];
 };
 #pragma pack(pop)
 
 
 // vmm context -------------------------------------------------
-struct vmm_context *create_vmm_context(void);
+struct settings_new_environment *create_new_enviroment(void);
 struct uefi_state_struct *create_uefi_state(void);
 
 #endif

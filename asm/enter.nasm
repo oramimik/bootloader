@@ -82,27 +82,38 @@ enter_vmm:
 	xor rbx, rbx
 
 	lea rbx, enter_vmm
-	lea rax, next_step
+	lea rax, chg_gdtr_pg
 	sub rax, rbx
 
 	add rax, [rcx + 0x18]
 
 	jmp rax
 
-next_step:
+chg_gdtr_pg:
 	lgdt [r9]
 
 	mov rax, r10
         mov cr3, rax
-	jmp short ezpz
+	;mov rbx, [rcx + 0x08]
+	;mov rsp, rbx
 
-ezpz:
-	xor ax, ax
-	mov ds, ax
-	mov es, ax
-	mov ss, ax
-	mov fs, ax
-	mov gs, ax
+	;jmp short .reload_cs
+	jmp short .reload_segments
+
+;.reload_cs:
+	;push 0x38 ; problem
+	;lea rbx, [rel .reload_segments]
+	;push rbx
+	;retfq
+	
+.reload_segments:
+	;mov bx, 0x40
+	mov bx, 0x0
+	mov ds, bx
+	mov es, bx
+	mov fs, bx
+	mov gs, bx
+	mov ss, bx
 
         mov rax, 0x00400000
 	jmp far rax
