@@ -11,7 +11,7 @@ void EFIAPI init_services(EFI_HANDLE image_handle,
 EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 			   IN EFI_SYSTEM_TABLE *SystemTable);
 
-extern void enter_vmm(struct settings_new_environment *context,
+extern void enter_vmm(struct settings_new_environment *new_setup,
 		      struct uefi_state_struct *uefi_state);
 
 extern void exit_vmm(void);

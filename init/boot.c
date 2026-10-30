@@ -75,7 +75,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 	uefi_state->start(uefi_state);
 	gST->ConOut->SetAttribute(gST->ConOut,
 				  EFI_GREEN | EFI_BACKGROUND_BLACK);
-	Print(L"context addr = %lx\r\n", (UINT64 *)new_setup);
+	Print(L"context addr = %lx\r\n", (UINT64 *)new_setup); 
 
 	new_setup->init(new_setup);
 

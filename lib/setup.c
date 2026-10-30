@@ -9,6 +9,8 @@
 #include <Protocol/MpService.h>
 #include <Protocol/SimpleFileSystem.h>
 
+#include <IndustryStandard/Acpi66.h>
+
 #include <Guid/Acpi.h>
 #include <Guid/FileInfo.h>
 
@@ -245,6 +247,7 @@ static void EFIAPI __start_setup(struct settings_new_environment *new_setup,
 	struct init_vmm_param *parameters =
 		(struct init_vmm_param *)(new_setup->vmm + 0x10);
 
+	// 0xffffffffffff0000ULL
 	free_page = ((new_setup->vmm + new_setup->vmm_bin_size) &
 		     0xffffffffffff0000ULL) +
 		    PAGE_4KB;
@@ -392,8 +395,9 @@ __setup_page_table(struct settings_new_environment *new_setup, UINT64 free_page)
 	ZeroMem((void *)new_setup->pdpte, PAGE_4KB);
 	ZeroMem((void *)new_setup->pde, PAGE_4KB);
 
+	 /* 0 ~ 4mb*/
 	for (UINT64 i = 0; i < 2; ++i) {
-		new_setup->pde[i] = (i * PAGE_2MB); /* 0 ~ 4mb*/
+		new_setup->pde[i] = (i * PAGE_2MB);
 		new_setup->pde[i] |= PDE_FLAGS_MASK;
 	}
 
@@ -438,32 +442,22 @@ static UINT64 EFIAPI __setup_apic_page_table(
 	struct settings_new_environment *new_setup, UINT32 local_apic_address)
 {
 	// identity mapping for local apic address
-	UINT64 *pde, i, *pte;
+	UINT64 i, *pte;
 
-	pde = (UINT64 *)new_setup->current_free_page;
-	ZeroMem((void *)pde, PAGE_4KB);
-	new_setup->current_free_page += PAGE_4KB;
 
 	i = (local_apic_address >> 21) & 0x1ff;
+
 	pte = (UINT64 *)new_setup->current_free_page;
-	pte[0] = (UINT64)local_apic_address |
-		 0x13; // present, rw = 1 (ON), cache = 0 (OFF)
+	ZeroMem((void *)pte, PAGE_4KB);
+	new_setup->current_free_page += PAGE_4KB;
+
+	// present, rw = 1 (ON), cache = 0 (OFF)
+	pte[0] = (UINT64)local_apic_address | 0x13;
 	new_setup->pde[i] = ((UINT64)pte) | BASIC_FLAGS_MASK;
-	new_setup->pdpte[3] = (UINT64)pde | BASIC_FLAGS_MASK;
 
 	// #ifdef _DEBUG
 	Print(L"\r\n\r\n");
-	Print(L"pdpte[0] = 0x%llx\r\n", new_setup->pdpte[0]);
-	Print(L"pdpte[3] = 0x%llx\r\n", new_setup->pdpte[3]);
-	for (i = 0; i < 70; ++i) {
-		Print(L"===================pde[%llx] = "
-		      L"0x%llx==================\r\n",
-		      i, new_setup->pde[i]);
-	}
-	Print(L"\r\n\r\n");
 	// #endif
-
-	new_setup->current_free_page += PAGE_4KB;
 
 	return 0;
 }
@@ -486,11 +480,11 @@ static UINT64 EFIAPI __vmm_mapping(struct settings_new_environment *new_setup,
 		free_page += PAGE_4KB;
 		ZeroMem((void *)pte, PAGE_4KB);
 		for (j = 0; j < 512; ++j) {
-			pte[j] = (new_setup->vmm + (vector * PAGE_2MB) +
+			pte[j] = (new_setup->vmm + (i * PAGE_2MB) +
 				  (j * PAGE_4KB)) |
 				 BASIC_FLAGS_MASK;
 		}
-		new_setup->pde[vector + 2] = ((UINT64)pte) | BASIC_FLAGS_MASK;
+		new_setup->pde[i + 2] = ((UINT64)pte) | BASIC_FLAGS_MASK;
 	}
 
 	gST->ConOut->ClearScreen(gST->ConOut);
@@ -654,6 +648,8 @@ __setup_vmm_parameters(struct settings_new_environment *new_setup,
 	      new_setup->enabled_processor_num);
 	Print(L"processor num = %llx\r\n", new_setup->processor_num);
 	parameters->core_num = new_setup->enabled_processor_num;
+	gBS->AllocatePool(EfiRuntimeServicesData, parameters->core_num,
+			  (void **)&parameters->apic_id);
 	madt_addr = __get_apic(new_setup); // should be complete
 
 	new_setup->current_free_page += PAGE_4KB;
@@ -681,7 +677,6 @@ __setup_vmm_parameters(struct settings_new_environment *new_setup,
 	Print(L"APIC Global Enable? = %s\r\n",
 	      (j & (1 << 11)) ? L"YES" : L"NO");
 
-	j = 0;
 	j |= (1 << 11); // x2apic enable
 
 	AsmWriteMsr64(0x1b, j);

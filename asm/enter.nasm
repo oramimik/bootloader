@@ -94,6 +94,7 @@ chg_gdtr_pg:
 
 	mov rax, r10
         mov cr3, rax
+
 	;mov rbx, [rcx + 0x08]
 	;mov rsp, rbx
 
@@ -113,10 +114,9 @@ chg_gdtr_pg:
 	mov es, bx
 	mov fs, bx
 	mov gs, bx
-	mov ss, bx
 
-        mov rax, 0x00400000
-	jmp far rax
+        mov rbx, 0x00400000
+	jmp far rbx
 
 exit_vmm:
 	lea rdx, [rel uefi_state]
