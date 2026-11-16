@@ -37,13 +37,13 @@ static UINT64 EFIAPI StartSetup(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 
 static UINT64 EFIAPI SetupGdt(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 			      UINT64 FreePage);
-static VOID EFIAPI SetupTssX86X64(SETTINGS_NEW_ENVIRONMENT *NewSetup);
-static VOID EFIAPI SetupTss2Gdt(SETTINGS_NEW_ENVIRONMENT *NewSetup);
+//static VOID EFIAPI SetupTssX86X64(SETTINGS_NEW_ENVIRONMENT *NewSetup);
+//static VOID EFIAPI SetupTss2Gdt(SETTINGS_NEW_ENVIRONMENT *NewSetup);
 
 static UINT64 EFIAPI SetupPageTable(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 				    UINT64 FreePage);
 
-static VOID EFIAPI SetupMemoryMap(SETTINGS_NEW_ENVIRONMENT *NewSetup);
+static UINT64 EFIAPI SetupMemoryMap(SETTINGS_NEW_ENVIRONMENT *NewSetup);
 
 static UINT64 EFIAPI StartApWakeUp(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 				   UINT64 FreePage);
@@ -85,7 +85,7 @@ SETTINGS_NEW_ENVIRONMENT *CreateNewEnvironment(VOID)
 	NewSetup->Init = InitVmmEnvironment;
 	NewSetup->Start = StartSetup;
 	NewSetup->SetGdt = SetupGdt;
-	NewSetup->SetTss = SetupTssX86X64;
+//	NewSetup->SetTss = SetupTssX86X64;
 	NewSetup->SetPageTable = SetupPageTable;
 
 	NewSetup->Done = InitVmmParameters;
@@ -178,6 +178,10 @@ static EFI_STATUS EFIAPI ReadVmmBinary(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 
 	VmmImg->SetPosition(VmmImg, 0);
 	NewSetup->VmmBinSize = (UINT64)GetVmmSize(VmmImg);
+	if (NewSetup->VmmBinSize == 0) {
+		Status = EFI_NOT_READY;
+		return Status;
+	}
 
 	TotalPages = EFI_SIZE_TO_PAGES(NewSetup->VmmBinSize);
 	Print(L"How many need pages = %llx\r\n", TotalPages);
@@ -220,7 +224,10 @@ static UINTN EFIAPI GetVmmSize(EFI_FILE_PROTOCOL *VmmImg)
 
 	Status = VmmImg->GetInfo(VmmImg, &gEfiFileInfoGuid, &BinSize, NULL);
 	if (Status == EFI_BUFFER_TOO_SMALL) {
-		gBS->AllocatePool(EfiLoaderData, BinSize, (VOID **)&FileInfo);
+		Status = gBS->AllocatePool(EfiLoaderData, BinSize, (VOID **)&FileInfo);
+		if (EFI_ERROR(Status)) {
+			return 0;
+		}
 	}
 
 	Status = VmmImg->GetInfo(VmmImg, &gEfiFileInfoGuid, &BinSize,
@@ -263,7 +270,7 @@ static UINT64 EFIAPI StartSetup(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 
 	Print(L"\r\n\r\n\r\n");
 
-	NewSetup->SetTss(NewSetup);
+//	NewSetup->SetTss(NewSetup);
 	FreePage = NewSetup->SetGdt(NewSetup, FreePage);
 
 	FreePage = NewSetup->SetPageTable(NewSetup, FreePage);
@@ -280,7 +287,9 @@ static UINT64 EFIAPI StartSetup(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	NewSetup->UsedFreePages = (NewSetup->CurrentFreePage - NewSetup->Vmm) >> 12;
 	Print(L"USED FREE PAGES = 0x%llx\r\n", NewSetup->UsedFreePages);
 
-	NewSetup->GetMemoryMap(NewSetup);
+	if (NewSetup->GetMemoryMap(NewSetup) == 0) {
+		return 0;
+	}
 
 	Parameters->UefiStateAddress = (EFI_PHYSICAL_ADDRESS)UefiState;
 	InitVmmParameters(NewSetup, Parameters);
@@ -309,7 +318,7 @@ static UINT64 EFIAPI SetupGdt(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	NewSetup->Gdt[9] = X64_USER_CODE_SEGMENT;
 	NewSetup->Gdt[10] = X64_USER_DATA_SEGMENT;
 	NewSetup->Gdt[11] = 0;
-	SetupTss2Gdt(NewSetup);
+//	SetupTss2Gdt(NewSetup);
 
 	for (UINT64 I = 0; I < 12; ++I) {
 		Print(L"GDT[%llu] = 0x%lx, addr = 0x%lx\r\n", I,
@@ -339,6 +348,7 @@ static UINT64 EFIAPI SetupGdt(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	return FreePage;
 }
 
+/*
 static VOID EFIAPI SetupTssX86X64(SETTINGS_NEW_ENVIRONMENT *NewSetup)
 {
 	ZeroMem((VOID *)&NewSetup->Tss32, sizeof(TASK_STATE_SEGMENT32));
@@ -371,6 +381,7 @@ static VOID EFIAPI SetupTss2Gdt(SETTINGS_NEW_ENVIRONMENT *NewSetup)
 	NewSetup->Gdt[11] |= (UINT64)(TssAddr & 0xff000000) << 32;
 	NewSetup->Gdt[12] = 0;
 }
+*/
 
 static UINT64 EFIAPI SetupPageTable(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 				    UINT64 FreePage)
@@ -504,27 +515,35 @@ static VOID EFIAPI Print4Kb(SETTINGS_NEW_ENVIRONMENT *NewSetup)
 {
 }
 
-VOID EFIAPI SetupMemoryMap(SETTINGS_NEW_ENVIRONMENT *NewSetup)
+UINT64 EFIAPI SetupMemoryMap(SETTINGS_NEW_ENVIRONMENT *NewSetup)
 {
 	EFI_STATUS Status;
 	UINTN MapKey;
 
-	gBS->AllocatePool(EfiRuntimeServicesData,
+	Status = gBS->AllocatePool(EfiRuntimeServicesData,
 			  sizeof(EFI_MEMORY_DESCRIPTOR) * 8,
 			  (VOID **)&NewSetup->MemoryDesc);
+	if (EFI_ERROR(Status)) {
+		Print(L"Failed to AllocatePool for MemoryMap = %r\r\n", Status);
+		return 0;
+	}
 
 	do {
 		Status = gBS->GetMemoryMap(&NewSetup->MapSize,
 					   NewSetup->MemoryDesc, &MapKey,
 					   &NewSetup->DescSize, NULL);
-		gBS->FreePool((VOID *)NewSetup->MemoryDesc);
-		gBS->AllocatePool(EfiRuntimeServicesData, NewSetup->MapSize,
-				  (VOID **)&NewSetup->MemoryDesc);
-		if (EFI_ERROR(Status)) {
-			Print(L"failed get memory map = %r\r\n", Status);
-			NewSetup->MapSize += NewSetup->DescSize * 8;
+		if (Status == EFI_BUFFER_TOO_SMALL) {
+			gBS->FreePool((VOID *)NewSetup->MemoryDesc);
+			gBS->AllocatePool(EfiRuntimeServicesData, NewSetup->MapSize,
+					  (VOID **)&NewSetup->MemoryDesc);
+			if (EFI_ERROR(Status)) {
+				Print(L"failed get memory map = %r\r\n", Status);
+				NewSetup->MapSize += NewSetup->DescSize * 8;
+			}
 		}
 	} while (Status == EFI_BUFFER_TOO_SMALL);
+
+	return 1;
 }
 
 static UINT64 EFIAPI StartApWakeUp(SETTINGS_NEW_ENVIRONMENT *NewSetup,
@@ -609,7 +628,7 @@ static UINT64 EFIAPI InitVmmParameters(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	NewSetup->CurrentFreePage += PAGE_4KB;
 
 #ifdef _DEBUG
-	Print(L"\n\MADT ADDRESS IN UEFI = %llx\r\n", MadtAddr);
+	Print(L"\nMADT ADDRESS IN UEFI = %llx\r\n", MadtAddr);
 	Print(L"MADT SIGNATURE = %lx\r\n", MadtAddr->Header.Signature);
 	Print(L"MADT LENGTH = %lx\r\n", MadtAddr->Header.Length);
 	Print(L"APIC ADDRESS = %lx\r\n", MadtAddr->LocalApicAddress);
@@ -667,15 +686,19 @@ static UINT64 EFIAPI InitVmmParameters(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 
 	//SetupApicPageTable(NewSetup, MadtAddr->LocalApicAddress);
 
-	gBS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesCode, 0x8000,
+	Status = gBS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesCode, 0x8000,
 			   &Parameters->ExtraMemoryPa);
 
-	SetMem((VOID *)Parameters->ExtraMemoryPa, 0x8000, 0);
+	if (EFI_ERROR(Status)) {
+		Print(L"Failed AllocatePages for ExtraMemory !!!!!! = %r\r\n", Status);
+		return 0;
+	}
+	SetMem((VOID *)Parameters->ExtraMemoryPa, 0x8000 * PAGE_4KB, 0);
 
 	ExtraMapping(NewSetup, Parameters->ExtraMemoryPa);
 
 	Parameters->Pml4 =
-		(UINT64 *)0x00400000 + ((EFI_PHYSICAL_ADDRESS)NewSetup->Pml4 - NewSetup->Vmm);
+		(UINT64 *)((UINT64)0x00400000 + ((EFI_PHYSICAL_ADDRESS)NewSetup->Pml4 - NewSetup->Vmm));
 
 	PrintVmmParameters(NewSetup, Parameters);
 

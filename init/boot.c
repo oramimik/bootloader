@@ -77,7 +77,10 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle,
 	NewSetup->Init(NewSetup);
 
 	VmmBin = NewSetup->OpenVmm(ImageHandle);
-	NewSetup->ReadVmm(NewSetup, VmmBin);
+	if (EFI_NOT_READY == NewSetup->ReadVmm(NewSetup, VmmBin)) {
+		Print(L"Failed read vmm\r\n");
+		return EFI_LOAD_ERROR;
+	}
 
 	Status = NewSetup->Start(NewSetup,
 			UefiState); /* only vmm size is 6mb, total = 8mb */
