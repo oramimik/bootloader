@@ -1,0 +1,9 @@
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = Bootloader
+  PACKAGE_GUID                   = E0D5AC40-2987-4C8D-8B27-C46BB544618F
+  PACKAGE_VERSION                = 0.1
+  
+[LibraryClasses]
+  boot|init/boot.h
+  setup|lib/setup.h

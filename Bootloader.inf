@@ -1,0 +1,54 @@
+## @file
+#  BootSelector Main Driver
+#
+#  Copyright (c) 2025
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = Bootloader
+  FILE_GUID                      = EBC6B6F0-C86B-4B38-AA55-8DD081A846F1
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  init/boot.c
+  lib/setup.c
+
+  asm/enter.nasm
+
+[Packages]
+  MdePkg/MdePkg.dec
+  BootloaderPkg/BootloaderPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  UefiBootServicesTableLib
+  UefiApplicationEntryPoint
+  UefiLib
+  PcdLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DevicePathLib
+  UefiRuntimeServicesTableLib
+  StackCheckLib
+  StackCheckFailureHookLib
+  RegisterFilterLib
+  PrintLib
+
+[Protocols]
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiLoadedImageProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiMpServiceProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+
+[Guids]
+  gEfiFileInfoGuid
+  gEfiAcpi20TableGuid
+
+[Depex]
+  TRUE
