@@ -1,4 +1,4 @@
-# Custom UEFI Bootloader & VMM Initialization Engine (`kimimaro`)
+# Custom UEFI Bootloader & VMM Initialization Engine
 
 A low-level UEFI bootloader and initialization module written in C using the **EDK II framework**, designed to set up and bootstrap a custom x86-64 Hypervisor / Virtual Machine Monitor (VMM).
 
