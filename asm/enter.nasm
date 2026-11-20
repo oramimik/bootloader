@@ -57,8 +57,8 @@ global ExitVmm
 EnterVmm:
         cli
 
-	mov r9, [rdi + 0x38]
-	mov r10, [rdi + 0x40]
+	mov r9, [rdi + 0x30]
+	mov r10, [rdi + 0x38]
 
 	push rbx
 
@@ -86,7 +86,7 @@ EnterVmm:
 	lea rax, chg_gdtr_pg
 	sub rax, rbx
 
-	add rax, [rdi + 0x18]
+	add rax, [rdi + 0x10]
 
 	jmp rax
 
