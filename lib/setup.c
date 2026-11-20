@@ -144,6 +144,7 @@ static EFI_FILE_PROTOCOL EFIAPI *OpenVmmBinary(EFI_HANDLE ImageHandle)
 		      Status);
 		return NULL;
 	}
+	Print(L"ImageBase Address = %llx\r\n", LoadedImg->ImageBase);
 
 	Status = gBS->HandleProtocol(LoadedImg->DeviceHandle,
 				     &gEfiSimpleFileSystemProtocolGuid,
@@ -185,8 +186,13 @@ static EFI_STATUS EFIAPI ReadVmmBinary(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 
 	TotalPages = EFI_SIZE_TO_PAGES(NewSetup->VmmBinSize);
 	Print(L"How many need pages = %llx\r\n", TotalPages);
+	NewSetup->VmmPages = TotalPages;
 	TotalPages = ((((TotalPages + 511) >> 9) * 512) + 512) >> 1;
 	NewSetup->Capacity = TotalPages * PAGE_4KB;
+
+	if (NewSetup->Capacity - (NewSetup->VmmPages * PAGE_4KB) < 0x1a000) {
+		TotalPages *= 2;
+	}
 
 	Print(L"TOTAL SIZE = 0x%llx\r\n", TotalPages);
 	Print(L"TOTAL ALLOCATE SIZE = 0x%llx\r\n", NewSetup->Capacity);
@@ -251,22 +257,16 @@ static UINT64 EFIAPI StartSetup(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	UINT64 FreePage;
 	INIT_VMM_PARAM *Parameters = (INIT_VMM_PARAM *)(NewSetup->Vmm + 0x10);
 
-	FreePage = ((NewSetup->Vmm + NewSetup->Capacity - PAGE_2MB) &
-		    0xffffffffffff0000ULL) +
-		   PAGE_4KB;
-	NewSetup->VmmStack = (NewSetup->Vmm + (NewSetup->Capacity - PAGE_2MB));
+	FreePage = ((NewSetup->Vmm + (NewSetup->VmmPages * PAGE_4KB)) &
+		    ~0xfffULL);
+	NewSetup->VmmStack = FreePage;
 	NewSetup->VmmStackSize = 16 * PAGE_4KB;
 
-	FreePage = ((((UINT64)NewSetup->Vmm + NewSetup->Capacity - PAGE_2MB) +
-		     NewSetup->VmmStackSize) &
-		    PAGE_MASK) +
-		   PAGE_4KB;
+	FreePage += NewSetup->VmmStackSize;
 
 	Print(L"\r\n\r\n\r\n");
 
 	Print(L"free page address = 0x%lx\r\n", FreePage);
-	NewSetup->Vmcs = FreePage;
-	FreePage += PAGE_4KB;
 
 	Print(L"\r\n\r\n\r\n");
 
@@ -277,7 +277,7 @@ static UINT64 EFIAPI StartSetup(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	if (FreePage == 0) {
 		return 0;
 	}
-		
+
 	FreePage = NewSetup->StartAps(NewSetup, FreePage);
 
 	NewSetup->CurrentFreePage = FreePage;
@@ -425,7 +425,7 @@ static UINT64 EFIAPI SetupPageTable(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	gST->ConOut->ClearScreen(gST->ConOut);
 	Print(L"\n\n");
 
-	gBS->Stall(3000);
+	gBS->Stall(30000);
 
 	return FreePage;
 }
@@ -599,16 +599,13 @@ static UINT64 EFIAPI InitVmmParameters(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	Parameters->ExtraMemoryEntryVa =
 		((UINT64)0x00400000 + NewSetup->Capacity);
 
-	i = (NewSetup->Capacity + (UINT64)0x00400000) - PAGE_2MB;
-	Parameters->SubStackEntryVa = NewSetup->VmmStackSize + i;
-	Parameters->SubStackEntryVa +=
-		((NewSetup->UsedFreePages * PAGE_4KB) - PAGE_2MB) + PAGE_4KB;
+	Parameters->SubStackEntryVa += (UINT64)0x00400000 + NewSetup->VmmStackSize;
 
 	i = Parameters->SubStackEntryVa & 0xfffff;
 
-	Parameters->SubStackPages = (PAGE_2MB - i) >> 12;
+	Parameters->SubStackPages = i >> 12;
 	Parameters->Bsp = NewSetup->Bsp;
-	
+
 	Parameters->ApEntryPage = NewSetup->ApEntryPage;
 
 	Print(L"enabled processor num = %llx\r\n",
@@ -680,9 +677,6 @@ static UINT64 EFIAPI InitVmmParameters(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 		}
 		MadtEntry += LocalApic->Length;
 	}
-	for (i = 0; i < 4; ++i) {
-		Parameters->Reserved[i] = 0;
-	}
 
 	//SetupApicPageTable(NewSetup, MadtAddr->LocalApicAddress);
 
@@ -700,6 +694,9 @@ static UINT64 EFIAPI InitVmmParameters(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 	Parameters->Pml4 =
 		(UINT64 *)((UINT64)0x00400000 + ((EFI_PHYSICAL_ADDRESS)NewSetup->Pml4 - NewSetup->Vmm));
 
+	Parameters->Reserved0 = 0;
+	Parameters->Reserved1 = 0;
+	Parameters->Reserved2 = 0;
 	PrintVmmParameters(NewSetup, Parameters);
 
 	return 1;
@@ -780,9 +777,6 @@ static VOID EFIAPI PrintVmmParameters(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 		Print(L"APIC ID[%llx] = %llx\r\n", i, Parameters->ApicId[i]);
 	}
 	Print(L"Enabled Processor = %llx\r\n", Parameters->CoreNum);
-	for (i = 0; i < 4; ++i) {
-		Print(L"Reserved[%llx] = %llx\r\n", i, Parameters->Reserved[i]);
-	}
 	Print(L"############################################################"
 	      L"\r\n");
 	Print(L"\r\n\r\n\r\n\r\n\r\n");
@@ -802,9 +796,6 @@ static VOID EFIAPI PrintVmmParameters(SETTINGS_NEW_ENVIRONMENT *NewSetup,
 		Print(L"APIC ID[%llx] = %llx\r\n",i, Parameters->ApicId[i]);
 	}
 	Print(L"Enabled Processor = %llx\r\n", Parameters->CoreNum);
-	for (i = 0; i < 4; ++i) {
-		Print(L"Reserved[%llx] = %llx\r\n", i, Parameters->Reserved[i]);
-	}
 	Print(L"PHYSICAL ADDRESS PRINTING\r\n");
 	Print(L"############################################################"
 	      L"\r\n");

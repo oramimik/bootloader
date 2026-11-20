@@ -125,7 +125,7 @@ typedef struct _INIT_VMM_PARAM INIT_VMM_PARAM;
 struct _SETTINGS_NEW_ENVIRONMENT {
 	EFI_PHYSICAL_ADDRESS Vmm;
 	EFI_PHYSICAL_ADDRESS VmmStack;
-	EFI_PHYSICAL_ADDRESS Vmcs;
+//	EFI_PHYSICAL_ADDRESS ReservedAlign;
 	EFI_PHYSICAL_ADDRESS EnterVmmAddr;
 	EFI_PHYSICAL_ADDRESS ApEntryPage;
 	UINT64 VmmStackSize;
@@ -150,6 +150,7 @@ struct _SETTINGS_NEW_ENVIRONMENT {
 	UINT64 ProcessorNum;
 	UINT64 EnabledProcessorNum;
 
+	UINT64 VmmPages;
 	UINT64 VmmBinSize;
 	UINT64 Capacity;
 
@@ -260,7 +261,9 @@ struct _INIT_VMM_PARAM {
 	UINT64 Bsp;
 	UINT64 *ApicId;
 	UINT64 CoreNum;
-	UINT64 Reserved[3];
+	UINT64 Reserved0;
+	UINT64 Reserved1;
+	UINT64 Reserved2;
 };
 #pragma pack(pop)
 
